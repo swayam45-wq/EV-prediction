@@ -1,0 +1,86 @@
+{
+  "model_type": "XGBoostRegressor",
+  "feature_columns": [
+    "battery_soc_pct",
+    "target_soc_pct",
+    "ambient_temp_c",
+    "battery_temp_c",
+    "charge_rate_kw",
+    "battery_capacity_kwh",
+    "cycle_count",
+    "battery_health_soh",
+    "c_rate",
+    "soc_delta"
+  ],
+  "target_column": "wear_score",
+  "n_train_samples": 12000,
+  "n_test_samples": 3000,
+  "metrics": {
+    "test": {
+      "rmse": 1.8569,
+      "mae": 1.4174,
+      "r2": 0.9932
+    },
+    "cv_rmse_mean": 1.8147,
+    "cv_rmse_std": 0.0395
+  },
+  "model_comparison": {
+    "ridge": {
+      "rmse": 14.702,
+      "mae": 11.0514,
+      "r2": 0.5734
+    },
+    "random_forest": {
+      "rmse": 2.0738,
+      "mae": 1.6033,
+      "r2": 0.9915
+    },
+    "xgboost": {
+      "rmse": 1.8569,
+      "mae": 1.4174,
+      "r2": 0.9932
+    }
+  },
+  "xgboost_params": {
+    "objective": "reg:squarederror",
+    "base_score": null,
+    "booster": null,
+    "callbacks": null,
+    "colsample_bylevel": null,
+    "colsample_bynode": null,
+    "colsample_bytree": 0.8,
+    "device": null,
+    "early_stopping_rounds": null,
+    "enable_categorical": true,
+    "eval_metric": null,
+    "feature_types": null,
+    "feature_weights": null,
+    "gamma": 0.1,
+    "grow_policy": null,
+    "importance_type": null,
+    "interaction_constraints": null,
+    "learning_rate": 0.05,
+    "max_bin": null,
+    "max_cat_threshold": null,
+    "max_cat_to_onehot": null,
+    "max_delta_step": null,
+    "max_depth": 6,
+    "max_leaves": null,
+    "min_child_weight": null,
+    "missing": NaN,
+    "monotone_constraints": null,
+    "multi_strategy": null,
+    "n_estimators": 500,
+    "n_jobs": -1,
+    "num_parallel_tree": null,
+    "random_state": 42,
+    "reg_alpha": 0.1,
+    "reg_lambda": 1.0,
+    "sampling_method": null,
+    "scale_pos_weight": null,
+    "subsample": 0.8,
+    "tree_method": null,
+    "validate_parameters": null,
+    "verbosity": 0
+  }
+}

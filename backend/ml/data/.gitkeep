@@ -1,0 +1,3 @@
+# This folder holds the generated training dataset.
+# The CSV file is gitignored (too large).
+# Run `python backend/ml/generate_dataset.py` to regenerate it.

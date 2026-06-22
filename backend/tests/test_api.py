@@ -2,15 +2,11 @@
 Tests for the /api/recommend endpoint.
 
 Uses httpx + FastAPI TestClient for integration testing of the
-full recommendation pipeline.
+full recommendation pipeline. The `client` fixture is provided
+by conftest.py and uses an in-memory SQLite test DB.
 """
 
 import pytest
-from fastapi.testclient import TestClient
-from main import app
-
-
-client = TestClient(app)
 
 
 # ============================================================
@@ -39,10 +35,14 @@ VALID_PAYLOAD = {
 }
 
 
+# ============================================================
+# POST /api/recommend
+# ============================================================
+
 class TestRecommendEndpoint:
     """Integration tests for POST /api/recommend."""
 
-    def test_successful_recommendation(self):
+    def test_successful_recommendation(self, client):
         """Valid input should return 200 with full recommendation."""
         response = client.post("/api/recommend", json=VALID_PAYLOAD)
 
@@ -84,30 +84,30 @@ class TestRecommendEndpoint:
         # Check battery health advice
         assert len(data["battery_health_advice"]) > 0
 
-    def test_target_below_current(self):
+    def test_target_below_current(self, client):
         """Should return 400 if target SoC <= current SoC."""
         payload = {**VALID_PAYLOAD, "target_soc": 30}
         response = client.post("/api/recommend", json=payload)
         assert response.status_code == 400
 
-    def test_invalid_soc_range(self):
+    def test_invalid_soc_range(self, client):
         """Should return 422 for SoC values outside 0-100."""
         payload = {**VALID_PAYLOAD, "current_soc": 150}
         response = client.post("/api/recommend", json=payload)
         assert response.status_code == 422
 
-    def test_missing_required_fields(self):
+    def test_missing_required_fields(self, client):
         """Should return 422 if required fields are missing."""
         response = client.post("/api/recommend", json={})
         assert response.status_code == 422
 
-    def test_empty_prices(self):
+    def test_empty_prices(self, client):
         """Should return 422 for empty electricity prices."""
         payload = {**VALID_PAYLOAD, "electricity_prices": []}
         response = client.post("/api/recommend", json=payload)
         assert response.status_code == 422
 
-    def test_high_temperature_warning(self):
+    def test_high_temperature_warning(self, client):
         """High temperature should trigger degradation warnings."""
         payload = {**VALID_PAYLOAD, "temperature_celsius": 42}
         response = client.post("/api/recommend", json=payload)
@@ -119,7 +119,7 @@ class TestRecommendEndpoint:
         all_text = " ".join(data["battery_health_advice"] + data["explanations"])
         assert "temperature" in all_text.lower() or "heat" in all_text.lower()
 
-    def test_high_target_soc_warning(self):
+    def test_high_target_soc_warning(self, client):
         """Charging above 90% should trigger battery health warnings."""
         payload = {**VALID_PAYLOAD, "target_soc": 95}
         response = client.post("/api/recommend", json=payload)
@@ -128,34 +128,38 @@ class TestRecommendEndpoint:
         data = response.json()
         assert data["wear_estimate"]["high_soc_stress"] > 0
 
-    def test_savings_are_non_negative(self):
+    def test_savings_are_non_negative(self, client):
         """Optimized cost should not exceed naive cost."""
         response = client.post("/api/recommend", json=VALID_PAYLOAD)
         data = response.json()
         assert data["cost_analysis"]["savings_dollar"] >= 0
 
 
+# ============================================================
+# UTILITY ENDPOINTS
+# ============================================================
+
 class TestHealthEndpoints:
     """Test utility endpoints."""
 
-    def test_root(self):
+    def test_root(self, client):
         """Root endpoint should return API info."""
         response = client.get("/")
         assert response.status_code == 200
         assert "endpoints" in response.json()
 
-    def test_health(self):
+    def test_health(self, client):
         """Health check should return healthy status."""
         response = client.get("/health")
         assert response.status_code == 200
         assert response.json()["status"] == "healthy"
 
-    def test_battery_health_placeholder(self):
-        """Battery health endpoint should return placeholder."""
+    def test_battery_health_placeholder(self, client):
+        """Battery health endpoint should return 200."""
         response = client.get("/api/battery-health")
         assert response.status_code == 200
 
-    def test_analytics_placeholder(self):
-        """Analytics endpoint should return placeholder."""
+    def test_analytics_placeholder(self, client):
+        """Analytics endpoint should return 200."""
         response = client.get("/api/analytics")
         assert response.status_code == 200

@@ -10,7 +10,8 @@ Orchestrates the full recommendation pipeline:
     6. Return unified ChargingRecommendation response
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
+import json
 
 from models.schemas import (
     ChargingRequest,
@@ -19,11 +20,13 @@ from models.schemas import (
     CostComparison,
     BatteryWearEstimate,
 )
+from models.database import get_db, ChargingSession
 from services.optimizer import optimize_charging_schedule
-from services.battery_degradation import calculate_wear_score, compare_wear_scenarios
 from services.cost_analyzer import analyze_costs
 from services.recommendation_engine import generate_explanations
 from services.weather import get_weather_adjustments
+from ml.predict import predict_wear_score
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 router = APIRouter(tags=["Charging Recommendation"])
@@ -36,10 +39,13 @@ router = APIRouter(tags=["Charging Recommendation"])
     description=(
         "Accepts vehicle state, schedule, electricity prices, and weather data. "
         "Returns an LP-optimized charging schedule with cost savings analysis, "
-        "battery health advice, and human-readable explanations."
+        "battery health advice (XGBoost ML model), and human-readable explanations."
     ),
 )
-async def recommend_charging(request: ChargingRequest):
+async def recommend_charging(
+    request: ChargingRequest,
+    db: AsyncSession = Depends(get_db),
+):
     """
     Main recommendation endpoint.
 
@@ -164,30 +170,35 @@ async def recommend_charging(request: ChargingRequest):
     )
 
     # ----------------------------------------------------------
-    # 6. BATTERY WEAR ESTIMATION
+    # 6. BATTERY WEAR ESTIMATION (ML Model)
     # ----------------------------------------------------------
     active_slots = [s for s in result["schedule"] if s["energy_kwh"] > 0.01]
     total_energy = sum(s["energy_kwh"] for s in active_slots)
     num_active = len(active_slots) if active_slots else 1
     avg_rate = total_energy / num_active
 
-    wear_data = calculate_wear_score(
-        temperature_celsius=request.temperature_celsius or 25.0,
+    # Use ML model (falls back to heuristic if model not found)
+    temp_c = request.temperature_celsius or 25.0
+    wear_data = predict_wear_score(
+        battery_soc_pct=request.current_soc,
         target_soc_pct=request.target_soc,
-        avg_charging_rate_kw=avg_rate,
+        ambient_temp_c=temp_c,
+        battery_temp_c=temp_c + 5.0,          # battery slightly warmer than ambient
+        charge_rate_kw=avg_rate,
         battery_capacity_kwh=request.battery_capacity_kwh,
+        battery_health_soh=request.battery_health_soh,
     )
 
     wear_estimate = BatteryWearEstimate(
         total_score=wear_data["total_score"],
         rating=wear_data["rating"],
-        temperature_impact=wear_data["temperature_impact"],
-        high_soc_stress=wear_data["high_soc_stress"],
-        fast_charging_penalty=wear_data["fast_charging_penalty"],
+        temperature_impact=wear_data.get("temperature_impact", 0.0),
+        high_soc_stress=wear_data.get("high_soc_stress", 0.0),
+        fast_charging_penalty=wear_data.get("fast_charging_penalty", 0.0),
     )
 
     # Collect battery health advice
-    battery_advice = wear_data["recommendations"]
+    battery_advice = wear_data.get("recommendations", [])
 
     # Add weather warnings to advice
     if weather["warnings"]:
@@ -199,23 +210,22 @@ async def recommend_charging(request: ChargingRequest):
     explanations = generate_explanations(
         schedule=result["schedule"],
         prices=eligible_prices,
-        temperature_celsius=request.temperature_celsius or 25.0,
+        temperature_celsius=temp_c,
         target_soc_pct=request.target_soc,
         current_soc_pct=request.current_soc,
         cost_analysis=cost_data,
     )
 
-    # Add weather recommendations to explanations
     if weather["solar_opportunity"]:
         explanations.append(
-            "☀️ Solar energy opportunity detected — if you have solar panels, "
-            "consider shifting some charging to midday hours."
+            "Solar energy opportunity detected — consider shifting some charging "
+            "to midday hours if solar panels are available."
         )
 
     # ----------------------------------------------------------
     # 8. ASSEMBLE RESPONSE
     # ----------------------------------------------------------
-    return ChargingRecommendation(
+    response = ChargingRecommendation(
         status=result["status"],
         start_charging=result["start_time"],
         stop_charging=result["stop_time"],
@@ -227,6 +237,40 @@ async def recommend_charging(request: ChargingRequest):
         battery_health_advice=battery_advice,
         explanations=explanations,
     )
+
+    # ----------------------------------------------------------
+    # 9. PERSIST SESSION TO DATABASE
+    # ----------------------------------------------------------
+    try:
+        session = ChargingSession(
+            current_soc=request.current_soc,
+            target_soc=request.target_soc,
+            battery_capacity_kwh=request.battery_capacity_kwh,
+            max_charge_rate_kw=request.max_charge_rate_kw,
+            battery_health_soh=request.battery_health_soh,
+            temperature_celsius=temp_c,
+            weather_condition=request.weather_condition or "clear",
+            departure_time=request.departure_time,
+            charging_efficiency=request.charging_efficiency or 0.90,
+            status=result["status"],
+            start_charging=result["start_time"],
+            stop_charging=result["stop_time"],
+            total_energy_kwh=result["total_energy_kwh"],
+            optimized_cost=cost_data["optimized_cost"],
+            normal_cost=cost_data["normal_cost"],
+            savings_percent=cost_data["savings_percent"],
+            wear_score=wear_data["total_score"],
+            wear_rating=wear_data["rating"],
+            wear_source=wear_data.get("source", "unknown"),
+            schedule_json=[s.model_dump() for s in schedule_slots],
+            explanations_json=explanations,
+        )
+        db.add(session)
+        await db.flush()   # get the ID without full commit (get_db commits on exit)
+    except Exception:
+        pass   # DB errors must never break the API response
+
+    return response
 
 
 # ============================================================

@@ -10,13 +10,41 @@ Interactive docs at:
     http://localhost:8000/docs
 """
 
+from contextlib import asynccontextmanager
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from config import settings
+from models.database import init_db
 from api.routes.recommend import router as recommend_router
 from api.routes.battery_health import router as battery_health_router
 from api.routes.analytics import router as analytics_router
+
+logger = logging.getLogger(__name__)
+
+
+# ============================================================
+# LIFESPAN — startup / shutdown
+# ============================================================
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Initialise DB tables and load ML model on startup."""
+    logger.info("Starting up — initialising database...")
+    await init_db()
+    logger.info("Database ready.")
+
+    # Warm-up: load ML model into memory so first request is fast
+    from ml.predict import _load_artifacts
+    loaded = _load_artifacts()
+    logger.info("ML model loaded: %s", loaded)
+
+    yield  # App runs here
+
+    logger.info("Shutting down.")
+
 
 
 # ============================================================
@@ -26,11 +54,12 @@ from api.routes.analytics import router as analytics_router
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
+    lifespan=lifespan,
     description=(
         "An intelligent EV charging optimization platform that minimizes "
         "charging cost while maximizing battery health and ensuring the "
         "vehicle is ready before departure. Uses Linear Programming (PuLP) "
-        "to compute optimal hourly charging schedules."
+        "and XGBoost ML to compute optimal hourly charging schedules."
     ),
     docs_url="/docs",
     redoc_url="/redoc",

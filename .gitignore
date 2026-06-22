@@ -25,6 +25,7 @@ build/
 backend/ml/models/*.pkl
 backend/ml/models/*.joblib
 backend/ml/models/*.h5
+backend/ml/data/*.csv
 
 # Node (frontend — Phase 2)
 node_modules/

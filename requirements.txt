@@ -1,6 +1,6 @@
 # ============================================================
 # AI-Powered Smart EV Charging Recommendation System
-# Python Dependencies — Phase 1
+# Python Dependencies — Phase 1 + Phase 2
 # ============================================================
 
 # --- Web Framework ---
@@ -12,13 +12,21 @@ pydantic-settings>=2.0
 # --- Optimization ---
 pulp[cbc]>=2.8
 
-# --- Data & ML (foundation) ---
+# --- Data & ML ---
 numpy>=1.26.0
 pandas>=2.1.0
 scikit-learn>=1.3.0
+xgboost>=2.0.0
+joblib>=1.3.0               # model serialization
+
+# --- Database (Phase 2) ---
+sqlalchemy>=2.0.0
+aiosqlite>=0.19.0           # async SQLite driver (local dev)
+alembic>=1.13.0             # database migrations
 
 # --- Testing ---
 pytest>=7.4.0
+pytest-asyncio>=0.23.0      # async test support
 httpx>=0.25.0               # async test client for FastAPI
 
 # --- Utilities ---
