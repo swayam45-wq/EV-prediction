@@ -1,5 +1,9 @@
 import axios from 'axios'
-import type { ChargingRequest, ChargingRecommendation, BatteryHealthResponse, AnalyticsResponse } from './types'
+import type {
+  ChargingRequest, ChargingRecommendation,
+  BatteryHealthResponse, AnalyticsResponse,
+  WeatherResponse, PricesResponse,
+} from './types'
 
 const api = axios.create({
   baseURL: '/',
@@ -15,6 +19,17 @@ export const getBatteryHealth = (): Promise<BatteryHealthResponse> =>
 
 export const getAnalytics = (limit = 30): Promise<AnalyticsResponse> =>
   api.get<AnalyticsResponse>(`/api/analytics?limit=${limit}`).then(r => r.data)
+
+/** Fetch live weather. Pass city or leave blank for adjustment-only mode. */
+export const getWeather = (params?: {
+  city?: string; lat?: number; lon?: number
+  temp?: number; condition?: string
+}): Promise<WeatherResponse> =>
+  api.get<WeatherResponse>('/api/weather', { params }).then(r => r.data)
+
+/** Fetch 24h electricity price schedule for a given region. */
+export const getPrices = (region = 'US_CA', source = 'auto'): Promise<PricesResponse> =>
+  api.get<PricesResponse>('/api/prices', { params: { region, source } }).then(r => r.data)
 
 export const getHealth = () =>
   api.get('/health').then(r => r.data)

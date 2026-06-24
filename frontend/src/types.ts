@@ -16,6 +16,7 @@ export interface ChargingRequest {
   temperature_celsius?: number;
   weather_condition?: string;
   charging_efficiency?: number;
+  v2g_enabled?: boolean;         // Phase 4: Vehicle-to-Grid
 }
 
 export interface HourlyChargingSlot {
@@ -87,4 +88,52 @@ export interface AnalyticsResponse {
   savings_trend: { date: string; savings_percent: number; optimized_cost: number; normal_cost: number }[];
   charging_pattern: { hour: string; count: number }[];
   soc_distribution: { range: string; count: number }[];
+}
+
+// ── Phase 4 types ──────────────────────────────────────────────
+
+export interface WeatherAdjustments {
+  temperature_celsius: number;
+  weather_condition: string;
+  efficiency_modifier: number;
+  solar_opportunity: boolean;
+  warnings: string[];
+  recommendations: string[];
+}
+
+export interface WeatherLiveData {
+  source: 'openweathermap' | 'unavailable';
+  city: string | null;
+  temperature_celsius: number | null;
+  weather_condition: string | null;
+  description: string | null;
+  humidity_pct: number | null;
+  wind_speed_ms: number | null;
+  reason?: string;
+}
+
+export interface WeatherResponse {
+  status: string;
+  live_data: WeatherLiveData;
+  adjustments: WeatherAdjustments;
+}
+
+export interface PriceSlot {
+  hour: string;
+  price: number;
+}
+
+export interface PricesResponse {
+  status: string;
+  region: string;
+  source: string;
+  prices: PriceSlot[];
+  avg_price: number;
+  peak_hour: string;
+  peak_price: number;
+  off_peak_hour: string;
+  off_peak_price: number;
+  currency: string;
+  note: string;
+  supported_regions: string[];
 }
