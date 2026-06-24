@@ -1,69 +1,105 @@
 import { NavLink } from 'react-router-dom'
-import { Zap, Home, BarChart3, Battery, Activity } from 'lucide-react'
+import {
+  LayoutDashboard, Zap, Battery, BarChart3,
+  Settings, BellRing, Wifi
+} from 'lucide-react'
 
-const links = [
-  { to: '/',          label: 'Home',        icon: Home },
+const EV_ICON = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v9a2 2 0 0 1-2 2h-1" />
+    <circle cx="7" cy="17" r="2" /><circle cx="17" cy="17" r="2" />
+    <path d="M9 11V6" /><path d="M12 11V6" /><path d="M9 8.5h3" />
+  </svg>
+)
+
+const navItems = [
+  { to: '/',          label: 'Dashboard',   icon: LayoutDashboard },
   { to: '/optimizer', label: 'Optimizer',   icon: Zap },
   { to: '/battery',   label: 'Battery',     icon: Battery },
   { to: '/analytics', label: 'Analytics',   icon: BarChart3 },
 ]
 
-export default function Navbar() {
+export default function Sidebar() {
   return (
-    <nav style={{
-      position: 'sticky', top: 0, zIndex: 50,
-      background: 'rgba(10,15,30,0.85)',
-      backdropFilter: 'blur(16px)',
-      borderBottom: '1px solid var(--clr-border)',
-    }}>
-      <div style={{
-        maxWidth: 1280, margin: '0 auto',
-        padding: '0 24px',
-        display: 'flex', alignItems: 'center', height: 64,
-        gap: 8,
-      }}>
-        {/* Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginRight: 'auto' }}>
-          <div style={{
-            width: 36, height: 36, borderRadius: 10,
-            background: 'linear-gradient(135deg, #3b82f6, #06d6a0)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 0 16px rgba(59,130,246,0.5)',
-          }}>
-            <Activity size={20} color="#fff" />
+    <aside className="sidebar">
+      {/* Brand */}
+      <div className="brand">
+        <div className="brand-logo">
+          <div className="brand-icon">
+            <EV_ICON />
           </div>
-          <span style={{
-            fontFamily: 'Space Grotesk, sans-serif',
-            fontWeight: 700, fontSize: '1.1rem',
-            background: 'linear-gradient(135deg, #60a5fa, #06d6a0)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          }}>EV Optimizer</span>
+          <div>
+            <div className="brand-name">ChargeMind</div>
+            <div className="brand-tagline">EV Intelligence</div>
+          </div>
         </div>
+      </div>
 
-        {/* Nav links */}
-        {links.map(({ to, label, icon: Icon }) => (
+      {/* Vehicle status card */}
+      <div className="vehicle-card">
+        <div className="vehicle-model">Demo EV · 75 kWh</div>
+        <div className="vehicle-sub">VIN: WM3DEMO2026</div>
+        <div className="soc-bar-wrap">
+          <div className="soc-label">
+            <span>State of Charge</span>
+            <span style={{ color: '#10b981', fontWeight: 700 }}>72%</span>
+          </div>
+          <div className="soc-bar">
+            <div className="soc-fill" style={{ width: '72%' }} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+          <div className="pill pill-green">
+            <div className="pill-dot" />
+            Charging
+          </div>
+          <div className="pill pill-blue" style={{ marginLeft: 'auto', fontSize: 10 }}>
+            <Wifi size={9} /> Live
+          </div>
+        </div>
+      </div>
+
+      {/* Nav */}
+      <nav className="nav-section">
+        <div className="nav-section-label">Menu</div>
+        {navItems.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
             end={to === '/'}
-            style={({ isActive }) => ({
-              display: 'flex', alignItems: 'center', gap: 7,
-              padding: '8px 16px', borderRadius: 10,
-              fontSize: '0.88rem', fontWeight: 600,
-              textDecoration: 'none',
-              transition: 'all 0.2s',
-              color: isActive ? '#fff' : 'var(--clr-text-muted)',
-              background: isActive
-                ? 'linear-gradient(135deg, rgba(59,130,246,0.25), rgba(6,214,160,0.15))'
-                : 'transparent',
-              border: isActive ? '1px solid rgba(59,130,246,0.3)' : '1px solid transparent',
-            })}
+            className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
           >
-            <Icon size={16} />
-            <span className="hidden sm:inline">{label}</span>
+            <Icon size={16} className="nav-icon" />
+            {label}
           </NavLink>
         ))}
+
+        <div className="nav-section-label" style={{ marginTop: 20 }}>System</div>
+        <button className="nav-item">
+          <BellRing size={16} className="nav-icon" />
+          Alerts
+          <span style={{
+            marginLeft: 'auto', background: '#ef4444', color: '#fff',
+            fontSize: 10, fontWeight: 700, borderRadius: 999,
+            padding: '1px 6px', minWidth: 18, textAlign: 'center',
+          }}>2</span>
+        </button>
+        <button className="nav-item">
+          <Settings size={16} className="nav-icon" />
+          Settings
+        </button>
+      </nav>
+
+      {/* Footer */}
+      <div style={{
+        padding: '14px 16px',
+        borderTop: '1px solid var(--border)',
+        fontSize: 11,
+        color: 'var(--text-tertiary)',
+      }}>
+        <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 2 }}>ChargeMind v2.0</div>
+        <div>Backend · FastAPI + XGBoost</div>
       </div>
-    </nav>
+    </aside>
   )
 }

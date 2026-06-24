@@ -9,20 +9,16 @@ import { getAnalytics } from '../api'
 import type { AnalyticsResponse } from '../types'
 
 ChartJS.register(
-  CategoryScale, LinearScale, BarElement, PointElement, LineElement,
-  ArcElement, Title, Tooltip, Legend, Filler
+  CategoryScale, LinearScale, BarElement, PointElement,
+  LineElement, ArcElement, Title, Tooltip, Legend, Filler
 )
 
-const chartDefaults = {
-  scales: {
-    x: { ticks: { color: '#4a5a7a' }, grid: { color: 'rgba(255,255,255,0.04)' } },
-    y: { ticks: { color: '#8b9dc3' }, grid: { color: 'rgba(255,255,255,0.04)' } },
-  },
-  plugins: {
-    legend: { labels: { color: '#8b9dc3', font: { size: 12 } } },
-  },
-  responsive: true,
+const baseScaleOpts = {
+  x: { ticks: { color: '#4a5060', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
+  y: { ticks: { color: '#8b919e', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
 }
+
+const baseLegend = { labels: { color: '#8b919e', font: { size: 11 }, boxWidth: 12 } }
 
 export default function Analytics() {
   const [data, setData] = useState<AnalyticsResponse | null>(null)
@@ -30,23 +26,19 @@ export default function Analytics() {
   const [error, setError] = useState(false)
 
   useEffect(() => {
-    getAnalytics(30)
-      .then(setData)
-      .catch(() => setError(true))
-      .finally(() => setLoading(false))
+    getAnalytics(30).then(setData).catch(() => setError(true)).finally(() => setLoading(false))
   }, [])
 
-  const empty = !data || data.session_count === 0
+  const noSessions = !data || data.session_count === 0
 
-  /* ── Chart configs ──────────────────────────────────────── */
+  /* ── chart configs ────────────────────────────────────── */
   const wearChart = {
     labels: data?.wear_trend.map(w => w.date ? new Date(w.date).toLocaleDateString() : '') ?? [],
     datasets: [{
       label: 'Wear Score',
       data: data?.wear_trend.map(w => w.wear_score) ?? [],
-      borderColor: '#a78bfa',
-      backgroundColor: 'rgba(167,139,250,0.1)',
-      borderWidth: 2, tension: 0.4, fill: true,
+      borderColor: 'rgba(14,165,233,0.7)', backgroundColor: 'rgba(14,165,233,0.06)',
+      borderWidth: 1.5, tension: 0.4, fill: true,
     }],
   }
 
@@ -55,19 +47,17 @@ export default function Analytics() {
     datasets: [{
       label: 'Savings (%)',
       data: data?.savings_trend.map(s => s.savings_percent) ?? [],
-      borderColor: '#06d6a0',
-      backgroundColor: 'rgba(6,214,160,0.1)',
-      borderWidth: 2, tension: 0.4, fill: true,
+      borderColor: 'rgba(16,185,129,0.7)', backgroundColor: 'rgba(16,185,129,0.06)',
+      borderWidth: 1.5, tension: 0.4, fill: true,
     }],
   }
 
   const patternChart = {
     labels: data?.charging_pattern.map(p => p.hour) ?? [],
     datasets: [{
-      label: 'Sessions Started',
+      label: 'Sessions',
       data: data?.charging_pattern.map(p => p.count) ?? [],
-      backgroundColor: 'rgba(59,130,246,0.7)',
-      borderRadius: 6,
+      backgroundColor: 'rgba(14,165,233,0.6)', borderRadius: 4,
     }],
   }
 
@@ -75,104 +65,135 @@ export default function Analytics() {
     labels: data?.soc_distribution.map(s => `${s.range}%`) ?? [],
     datasets: [{
       data: data?.soc_distribution.map(s => s.count) ?? [],
-      backgroundColor: ['#1e3a5f', '#1d4ed8', '#3b82f6', '#60a5fa', '#06d6a0'],
-      borderColor: 'rgba(255,255,255,0.08)',
-      borderWidth: 2,
+      backgroundColor: ['#0c2a44', '#1d4ed8', '#0ea5e9', '#38bdf8', '#10b981'],
+      borderColor: 'var(--bg-raised)', borderWidth: 3,
     }],
   }
 
+  const avgWear = data?.wear_trend.length
+    ? (data.wear_trend.reduce((s, w) => s + w.wear_score, 0) / data.wear_trend.length).toFixed(1)
+    : '—'
+
+  const avgSavings = data?.savings_trend.length
+    ? `${(data.savings_trend.reduce((s, w) => s + w.savings_percent, 0) / data.savings_trend.length).toFixed(1)}%`
+    : '—'
+
   return (
-    <div className="page">
-      <h1 className="page-title fade-in-up">Analytics Dashboard</h1>
-      <p className="page-subtitle fade-in-up delay-1">
-        Aggregated insights across all your charging sessions — savings, wear trends, and patterns.
-      </p>
-
-      {error && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px',
-          background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
-          borderRadius: 12, color: '#f59e0b', marginBottom: 24 }}>
-          <AlertTriangle size={18} />
-          Backend not reachable — start the FastAPI server on port 8000.
+    <>
+      {/* Header */}
+      <div className="page-header">
+        <div className="page-header-inner">
+          <div className="page-eyebrow">Reporting</div>
+          <h1 className="page-title">Analytics</h1>
         </div>
-      )}
+      </div>
 
-      {loading && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
-          <div className="spinner" />
-        </div>
-      )}
-
-      {data && (
-        <>
-          {/* KPI row */}
-          <div className="grid-4 fade-in-up" style={{ marginBottom: 24 }}>
-            {[
-              { icon: BarChart3,    label: 'Total Sessions',    val: data.session_count,               unit: '',    color: '#3b82f6' },
-              { icon: DollarSign,  label: 'Total Saved',        val: `$${data.total_saved_usd.toFixed(2)}`, unit: '', color: '#06d6a0' },
-              { icon: TrendingDown,label: 'Avg Wear Score',     val: data.wear_trend.length > 0
-                ? (data.wear_trend.reduce((s, w) => s + w.wear_score, 0) / data.wear_trend.length).toFixed(1)
-                : '—',                                            unit: '/100', color: '#a78bfa' },
-              { icon: Zap,         label: 'Avg Savings',        val: data.savings_trend.length > 0
-                ? `${(data.savings_trend.reduce((s, w) => s + w.savings_percent, 0) / data.savings_trend.length).toFixed(1)}%`
-                : '—',                                            unit: '',    color: '#f59e0b' },
-            ].map(({ icon: Icon, label, val, unit, color }) => (
-              <div key={label} className="glass-card" style={{ padding: 20 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <p style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--clr-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 }}>{label}</p>
-                    <p style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '1.8rem', fontWeight: 700, color, lineHeight: 1 }}>
-                      {val}<span style={{ fontSize: '0.85rem', color: 'var(--clr-text-muted)', marginLeft: 2 }}>{unit}</span>
-                    </p>
-                  </div>
-                  <div style={{ width: 40, height: 40, borderRadius: 10, background: `${color}18`, border: `1px solid ${color}30`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon size={20} color={color} />
-                  </div>
-                </div>
-              </div>
-            ))}
+      <div className="page-body">
+        {error && (
+          <div className="alert alert-warning fade-up" style={{ marginBottom: 20 }}>
+            <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+            Backend not reachable — start the FastAPI server on port 8000.
           </div>
+        )}
 
-          {empty ? (
-            <div className="glass-card" style={{ padding: 64, textAlign: 'center' }}>
-              <BarChart3 size={48} color="var(--clr-text-faint)" style={{ margin: '0 auto 16px' }} />
-              <p style={{ color: 'var(--clr-text-muted)', fontSize: '1rem' }}>
-                No sessions yet — run the <strong style={{ color: 'var(--clr-text)' }}>Optimizer</strong> a few times to populate charts.
-              </p>
-            </div>
-          ) : (
-            <>
-              {/* Wear trend + Savings trend */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
-                <div className="glass-card fade-in-up delay-1" style={{ padding: 24 }}>
-                  <h3 style={{ fontWeight: 700, marginBottom: 20, color: '#a78bfa' }}>Wear Score Trend</h3>
-                  <Line data={wearChart} options={chartDefaults as Parameters<typeof Line>[0]['options']} />
-                </div>
-                <div className="glass-card fade-in-up delay-2" style={{ padding: 24 }}>
-                  <h3 style={{ fontWeight: 700, marginBottom: 20, color: '#06d6a0' }}>Savings Trend (%)</h3>
-                  <Line data={savingsChart} options={chartDefaults as Parameters<typeof Line>[0]['options']} />
-                </div>
-              </div>
+        {loading && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 0' }}>
+            <div className="spinner-lg" />
+          </div>
+        )}
 
-              {/* Charging pattern + SoC distribution */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                <div className="glass-card fade-in-up delay-3" style={{ padding: 24 }}>
-                  <h3 style={{ fontWeight: 700, marginBottom: 4, color: '#3b82f6' }}>Charging Start Hours</h3>
-                  <p style={{ color: 'var(--clr-text-muted)', fontSize: '0.82rem', marginBottom: 16 }}>When do you most often plug in?</p>
-                  <Bar data={patternChart} options={chartDefaults as Parameters<typeof Bar>[0]['options']} />
-                </div>
-                <div className="glass-card fade-in-up delay-4" style={{ padding: 24 }}>
-                  <h3 style={{ fontWeight: 700, marginBottom: 4, color: '#60a5fa' }}>Target SoC Distribution</h3>
-                  <p style={{ color: 'var(--clr-text-muted)', fontSize: '0.82rem', marginBottom: 16 }}>What charge level do you target?</p>
-                  <div style={{ maxWidth: 280, margin: '0 auto' }}>
-                    <Doughnut data={socDoughnut} options={{ responsive: true, plugins: { legend: { labels: { color: '#8b9dc3' } } } }} />
+        {data && (
+          <>
+            {/* KPI row */}
+            <div className="grid-4 fade-up" style={{ marginBottom: 16 }}>
+              {[
+                { icon: BarChart3,    label: 'Total Sessions',  value: data.session_count,                      unit: '',    color: 'var(--accent)',   cls: 'icon-box-blue' },
+                { icon: DollarSign,  label: 'Total Saved',      value: `$${data.total_saved_usd.toFixed(2)}`,   unit: '',    color: 'var(--success)',  cls: 'icon-box-green' },
+                { icon: TrendingDown,label: 'Avg Wear Score',   value: avgWear,                                  unit: '/100',color: 'var(--warning)', cls: 'icon-box-yellow' },
+                { icon: Zap,         label: 'Avg Savings',      value: avgSavings,                               unit: '',    color: 'var(--success)',  cls: 'icon-box-green' },
+              ].map(({ icon: Icon, label, value, unit, color, cls }) => (
+                <div key={label} className="stat-tile">
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                    <div className={`icon-box ${cls}`}><Icon size={15} /></div>
+                  </div>
+                  <div className="stat-label">{label}</div>
+                  <div className="stat-value" style={{ color, fontSize: 24 }}>
+                    {value}<span className="stat-unit">{unit}</span>
                   </div>
                 </div>
+              ))}
+            </div>
+
+            {noSessions ? (
+              <div className="card" style={{ padding: '60px 24px', textAlign: 'center' }}>
+                <BarChart3 size={40} color="var(--text-tertiary)" style={{ margin: '0 auto 14px' }} />
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  No session data yet
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                  Run the Optimizer a few times to populate charts.
+                </div>
               </div>
-            </>
-          )}
-        </>
-      )}
-    </div>
+            ) : (
+              <>
+                {/* Wear + Savings trends */}
+                <div className="grid-2 fade-up" style={{ marginBottom: 16 }}>
+                  <div className="card">
+                    <div className="card-header">
+                      <span className="card-title">Wear Score Trend</span>
+                      <div className="pill pill-blue"><div className="pill-dot" />Per session</div>
+                    </div>
+                    <div className="card-body">
+                      <Line data={wearChart} options={{ responsive: true, plugins: { legend: baseLegend }, scales: baseScaleOpts } as Parameters<typeof Line>[0]['options']} />
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="card-header">
+                      <span className="card-title">Cost Savings Trend</span>
+                      <div className="pill pill-green"><div className="pill-dot" />%</div>
+                    </div>
+                    <div className="card-body">
+                      <Line data={savingsChart} options={{ responsive: true, plugins: { legend: baseLegend }, scales: baseScaleOpts } as Parameters<typeof Line>[0]['options']} />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Charging pattern + SoC distribution */}
+                <div className="grid-2 fade-up">
+                  <div className="card">
+                    <div className="card-header">
+                      <span className="card-title">Charging Start Hours</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>When do you plug in?</span>
+                    </div>
+                    <div className="card-body">
+                      <Bar data={patternChart} options={{ responsive: true, plugins: { legend: baseLegend }, scales: baseScaleOpts } as Parameters<typeof Bar>[0]['options']} />
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="card-header">
+                      <span className="card-title">Target SoC Distribution</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Charge level preference</span>
+                    </div>
+                    <div className="card-body" style={{ display: 'flex', justifyContent: 'center' }}>
+                      <div style={{ maxWidth: 240 }}>
+                        <Doughnut
+                          data={socDoughnut}
+                          options={{
+                            responsive: true,
+                            plugins: {
+                              legend: { position: 'bottom', labels: { color: '#8b919e', font: { size: 11 }, boxWidth: 12, padding: 16 } },
+                            },
+                          }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </>
   )
 }

@@ -4,13 +4,12 @@ import {
   LineElement, PointElement, Title, Tooltip, Legend, Filler,
 } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
-import { Zap, Clock, TrendingDown, Shield, ChevronDown, ChevronUp, Loader2 } from 'lucide-react'
+import { Zap, Clock, TrendingDown, Shield, ChevronDown, ChevronUp, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
 import { getRecommendation } from '../api'
 import type { ChargingRequest, ChargingRecommendation, ElectricityPrice } from '../types'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler)
 
-/* ── Default electricity prices (time-of-use rate) ────────── */
 const DEFAULT_PRICES: ElectricityPrice[] = [
   { hour: '00:00', price: 0.08 }, { hour: '01:00', price: 0.07 },
   { hour: '02:00', price: 0.07 }, { hour: '03:00', price: 0.06 },
@@ -26,36 +25,25 @@ const DEFAULT_PRICES: ElectricityPrice[] = [
   { hour: '22:00', price: 0.12 }, { hour: '23:00', price: 0.10 },
 ]
 
-/* ── Small input field component ───────────────────────────── */
-function Field({ label, tip, children }: { label: string; tip?: string; children: React.ReactNode }) {
+function FormRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="input-label tooltip" data-tip={tip}>{label}</label>
+      <label className="form-label">{label}</label>
       {children}
     </div>
   )
 }
 
-/* ── Wear score ring ────────────────────────────────────────── */
-function WearRing({ score, rating }: { score: number; rating: string }) {
-  const color = rating === 'Low' ? '#06d6a0' : rating === 'Medium' ? '#f59e0b' : '#ef4444'
-  const r = 50, circumference = 2 * Math.PI * r
-  const dash = ((100 - score) / 100) * circumference
+function WearBar({ label, value }: { label: string; value: number }) {
+  const color = value < 15 ? 'var(--success)' : value < 35 ? 'var(--warning)' : 'var(--danger)'
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-      <svg width="130" height="130" viewBox="0 0 130 130" style={{ filter: `drop-shadow(0 0 12px ${color}50)` }}>
-        <circle cx={65} cy={65} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
-        <circle cx={65} cy={65} r={r} fill="none"
-          stroke={color} strokeWidth="10"
-          strokeDasharray={`${circumference - dash} ${circumference}`}
-          strokeLinecap="round" transform="rotate(-90 65 65)"
-          style={{ transition: 'stroke-dasharray 1s ease' }} />
-        <text x={65} y={60} textAnchor="middle" fill="#f0f4ff"
-          fontSize="22" fontWeight="700" fontFamily="Space Grotesk, sans-serif">{score.toFixed(0)}</text>
-        <text x={65} y={78} textAnchor="middle" fill="#8b9dc3" fontSize="10">/ 100</text>
-      </svg>
-      <div className={`badge badge-${rating === 'Low' ? 'green' : rating === 'Medium' ? 'yellow' : 'red'}`}>
-        {rating} Wear
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
+        <span>{label}</span>
+        <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--text-secondary)' }}>{value.toFixed(1)}</span>
+      </div>
+      <div className="progress-wrap">
+        <div className="progress-fill" style={{ width: `${Math.min(value, 100)}%`, background: color }} />
       </div>
     </div>
   )
@@ -63,14 +51,10 @@ function WearRing({ score, rating }: { score: number; rating: string }) {
 
 export default function Optimizer() {
   const [form, setForm] = useState({
-    current_soc: 30,
-    target_soc: 80,
-    battery_capacity_kwh: 75,
-    max_charge_rate_kw: 11,
-    battery_health_soh: 95,
-    departure_time: '08:00',
-    temperature_celsius: 22,
-    weather_condition: 'clear',
+    current_soc: 30, target_soc: 80,
+    battery_capacity_kwh: 75, max_charge_rate_kw: 11,
+    battery_health_soh: 95, departure_time: '08:00',
+    temperature_celsius: 22, weather_condition: 'clear',
     charging_efficiency: 0.90,
   })
   const [result, setResult] = useState<ChargingRecommendation | null>(null)
@@ -85,17 +69,16 @@ export default function Optimizer() {
     setLoading(true); setError(null); setResult(null)
     try {
       const payload: ChargingRequest = { ...form, electricity_prices: DEFAULT_PRICES }
-      const data = await getRecommendation(payload)
-      setResult(data)
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Unknown error'
-      setError(`Backend error: ${msg}. Make sure the FastAPI server is running on port 8000.`)
+      setResult(await getRecommendation(payload))
+    } catch {
+      setError('Could not reach backend. Ensure the FastAPI server is running on port 8000.')
     } finally {
       setLoading(false)
     }
   }
 
-  /* Chart data — mixed bar+line chart */
+  const delta = form.target_soc - form.current_soc
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const chartData: any = result ? {
     labels: result.schedule.map(s => s.hour),
@@ -104,18 +87,18 @@ export default function Optimizer() {
         label: 'Energy Charged (kWh)',
         data: result.schedule.map(s => s.energy_kwh),
         backgroundColor: result.schedule.map(s =>
-          s.is_charging ? 'rgba(59,130,246,0.8)' : 'rgba(255,255,255,0.05)'
+          s.is_charging ? 'rgba(14,165,233,0.85)' : 'rgba(255,255,255,0.04)'
         ),
-        borderRadius: 6,
+        borderRadius: 4,
         yAxisID: 'y',
       },
       {
         label: 'Price ($/kWh)',
         data: DEFAULT_PRICES.map(p => p.price),
         type: 'line' as const,
-        borderColor: 'rgba(245,158,11,0.7)',
-        backgroundColor: 'rgba(245,158,11,0.08)',
-        borderWidth: 2,
+        borderColor: 'rgba(245,158,11,0.6)',
+        backgroundColor: 'rgba(245,158,11,0.05)',
+        borderWidth: 1.5,
         pointRadius: 0,
         fill: true,
         yAxisID: 'y1',
@@ -127,265 +110,355 @@ export default function Optimizer() {
     responsive: true,
     interaction: { mode: 'index' as const, intersect: false },
     plugins: {
-      legend: { labels: { color: '#8b9dc3', font: { size: 12 } } },
+      legend: { labels: { color: '#8b919e', font: { size: 11 }, boxWidth: 12 } },
       title: { display: false },
     },
     scales: {
-      x: { ticks: { color: '#4a5a7a', maxRotation: 45 }, grid: { color: 'rgba(255,255,255,0.04)' } },
+      x: {
+        ticks: { color: '#4a5060', font: { size: 11 }, maxRotation: 45 },
+        grid: { color: 'rgba(255,255,255,0.04)' },
+      },
       y: {
         type: 'linear' as const, position: 'left' as const,
-        ticks: { color: '#8b9dc3' }, grid: { color: 'rgba(255,255,255,0.04)' },
-        title: { display: true, text: 'kWh', color: '#8b9dc3' },
+        ticks: { color: '#8b919e', font: { size: 11 } },
+        grid: { color: 'rgba(255,255,255,0.04)' },
+        title: { display: true, text: 'kWh', color: '#8b919e', font: { size: 11 } },
       },
       y1: {
         type: 'linear' as const, position: 'right' as const,
-        ticks: { color: '#f59e0b' }, grid: { drawOnChartArea: false },
-        title: { display: true, text: '$/kWh', color: '#f59e0b' },
+        ticks: { color: '#f59e0b', font: { size: 11 } },
+        grid: { drawOnChartArea: false },
+        title: { display: true, text: '$/kWh', color: '#f59e0b', font: { size: 11 } },
       },
     },
   }
 
+  const wear = result?.wear_estimate
+
   return (
-    <div className="page">
-      <h1 className="page-title fade-in-up">Charging Optimizer</h1>
-      <p className="page-subtitle fade-in-up delay-1">Enter your vehicle details and we'll compute the optimal low-cost charging schedule.</p>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '380px 1fr', gap: 24, alignItems: 'start' }}>
-
-        {/* ── INPUT FORM ────────────────────────────────────── */}
-        <form className="glass-card fade-in-up delay-1" style={{ padding: 28 }} onSubmit={handleSubmit}>
-          <h2 style={{ fontWeight: 700, marginBottom: 24, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Zap size={18} color="#3b82f6" /> Vehicle Details
-          </h2>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-            <Field label="Current SoC (%)" tip="How much charge is in your battery right now">
-              <input className="input-field" type="number" min={1} max={99} value={form.current_soc}
-                onChange={e => set('current_soc', +e.target.value)} />
-            </Field>
-
-            <Field label="Target SoC (%)" tip="How much charge do you want to reach">
-              <input className="input-field" type="number" min={1} max={100} value={form.target_soc}
-                onChange={e => set('target_soc', +e.target.value)} />
-            </Field>
-
-            {/* Live SoC bar */}
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--clr-text-muted)', marginBottom: 4 }}>
-                <span>Current: {form.current_soc}%</span><span>Target: {form.target_soc}%</span>
-              </div>
-              <div style={{ height: 8, borderRadius: 4, background: 'rgba(255,255,255,0.06)', position: 'relative', overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${form.current_soc}%`, background: 'linear-gradient(90deg,#3b82f6,#06d6a0)', borderRadius: 4, transition: 'width 0.3s' }} />
-                <div style={{ position: 'absolute', top: 0, height: '100%', left: `${form.current_soc}%`, width: `${form.target_soc - form.current_soc}%`, background: 'rgba(59,130,246,0.2)', borderRadius: '0 4px 4px 0' }} />
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Field label="Capacity (kWh)">
-                <input className="input-field" type="number" min={10} max={200} value={form.battery_capacity_kwh}
-                  onChange={e => set('battery_capacity_kwh', +e.target.value)} />
-              </Field>
-              <Field label="Max Rate (kW)">
-                <input className="input-field" type="number" min={1} max={350} value={form.max_charge_rate_kw}
-                  onChange={e => set('max_charge_rate_kw', +e.target.value)} />
-              </Field>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Field label="Battery Health (%)">
-                <input className="input-field" type="number" min={50} max={100} value={form.battery_health_soh}
-                  onChange={e => set('battery_health_soh', +e.target.value)} />
-              </Field>
-              <Field label="Departure Time">
-                <input className="input-field" type="time" value={form.departure_time}
-                  onChange={e => set('departure_time', e.target.value)} />
-              </Field>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <Field label="Temperature (°C)">
-                <input className="input-field" type="number" min={-20} max={50} value={form.temperature_celsius}
-                  onChange={e => set('temperature_celsius', +e.target.value)} />
-              </Field>
-              <Field label="Weather">
-                <select className="input-field" value={form.weather_condition}
-                  onChange={e => set('weather_condition', e.target.value)}>
-                  {['clear', 'cloudy', 'rain', 'snow', 'hot'].map(w => <option key={w}>{w}</option>)}
-                </select>
-              </Field>
-            </div>
-
-            {/* Collapsible price editor */}
-            <button type="button"
-              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', color: 'var(--clr-primary)', cursor: 'pointer', fontSize: '0.85rem', fontWeight: 600, padding: 0 }}
-              onClick={() => setShowPrices(v => !v)}>
-              {showPrices ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-              {showPrices ? 'Hide' : 'Show'} Electricity Prices
-            </button>
-
-            {showPrices && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, maxHeight: 200, overflowY: 'auto' }}>
-                {DEFAULT_PRICES.map((p, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: '0.8rem' }}>
-                    <span style={{ color: 'var(--clr-text-muted)', width: 40 }}>{p.hour}</span>
-                    <span style={{ color: '#f59e0b' }}>${p.price.toFixed(2)}</span>
-                  </div>
-                ))}
+    <>
+      {/* Page header */}
+      <div className="page-header">
+        <div className="page-header-inner">
+          <div className="page-eyebrow">Charging</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h1 className="page-title">Schedule Optimizer</h1>
+            {result && (
+              <div className={`pill pill-${result.status === 'optimal' ? 'green' : 'red'}`}>
+                {result.status === 'optimal'
+                  ? <><CheckCircle size={10} /> Optimal schedule found</>
+                  : <><AlertCircle size={10} /> Infeasible — adjust inputs</>
+                }
               </div>
             )}
-
-            <div className="divider" />
-
-            {error && (
-              <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, color: '#ef4444', fontSize: '0.82rem' }}>
-                {error}
-              </div>
-            )}
-
-            <button className="btn-primary" type="submit" disabled={loading} style={{ width: '100%', justifyContent: 'center' }}>
-              {loading ? <><Loader2 size={18} style={{ animation: 'spin-slow 0.8s linear infinite' }} /> Computing...</> : <><Zap size={18} /> Optimize Schedule</>}
-            </button>
           </div>
-        </form>
+        </div>
+      </div>
 
-        {/* ── RESULTS ──────────────────────────────────────── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          {!result && !loading && (
-            <div className="glass-card fade-in-up" style={{
-              padding: 64, textAlign: 'center',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16,
-            }}>
-              <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'rgba(59,130,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Zap size={36} color="#3b82f6" />
+      <div className="page-body">
+        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 20, alignItems: 'start' }}>
+
+          {/* ── INPUT PANEL ─────────────────────────────────── */}
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Battery section */}
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title"><Zap size={14} /> Vehicle Parameters</span>
               </div>
-              <p style={{ color: 'var(--clr-text-muted)', fontSize: '1rem' }}>
-                Fill in your vehicle details and click <strong style={{ color: 'var(--clr-text)' }}>Optimize Schedule</strong> to see results.
-              </p>
-            </div>
-          )}
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
 
-          {loading && (
-            <div className="glass-card" style={{ padding: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-              <div className="spinner" />
-              <p style={{ color: 'var(--clr-text-muted)' }}>Running LP optimizer + ML model...</p>
-            </div>
-          )}
+                {/* SoC range visual */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <FormRow label="Current SoC (%)">
+                      <input className="form-input" type="number" min={1} max={99}
+                        value={form.current_soc}
+                        onChange={e => set('current_soc', +e.target.value)}
+                        style={{ width: 100 }} />
+                    </FormRow>
+                    <FormRow label="Target SoC (%)">
+                      <input className="form-input" type="number" min={1} max={100}
+                        value={form.target_soc}
+                        onChange={e => set('target_soc', +e.target.value)}
+                        style={{ width: 100 }} />
+                    </FormRow>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 5 }}>
+                    Charge needed: <span style={{ color: 'var(--accent)', fontWeight: 700 }}>+{Math.max(0, delta)}%</span>
+                  </div>
+                  <div className="progress-wrap">
+                    <div className="progress-fill" style={{ width: `${form.current_soc}%`, background: 'var(--text-tertiary)' }} />
+                  </div>
+                  <div style={{ position: 'relative', marginTop: 2 }}>
+                    <div className="progress-wrap">
+                      <div className="progress-fill" style={{
+                        width: `${form.target_soc}%`,
+                        background: 'linear-gradient(90deg, var(--text-tertiary) 0%, var(--accent) 100%)'
+                      }} />
+                    </div>
+                  </div>
+                </div>
 
-          {result && (
-            <>
-              {/* Summary row */}
-              <div className="grid-4 fade-in-up">
-                <div className="glass-card" style={{ padding: 20, textAlign: 'center' }}>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--clr-text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Start</p>
-                  <p style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '1.6rem', fontWeight: 700, color: '#06d6a0' }}>{result.start_charging ?? '—'}</p>
+                <div className="grid-2">
+                  <FormRow label="Capacity (kWh)">
+                    <input className="form-input" type="number" min={10} max={200}
+                      value={form.battery_capacity_kwh}
+                      onChange={e => set('battery_capacity_kwh', +e.target.value)} />
+                  </FormRow>
+                  <FormRow label="Max Rate (kW)">
+                    <input className="form-input" type="number" min={1} max={350}
+                      value={form.max_charge_rate_kw}
+                      onChange={e => set('max_charge_rate_kw', +e.target.value)} />
+                  </FormRow>
                 </div>
-                <div className="glass-card" style={{ padding: 20, textAlign: 'center' }}>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--clr-text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Stop</p>
-                  <p style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '1.6rem', fontWeight: 700, color: '#3b82f6' }}>{result.stop_charging ?? '—'}</p>
-                </div>
-                <div className="glass-card" style={{ padding: 20, textAlign: 'center' }}>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--clr-text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Energy</p>
-                  <p style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '1.6rem', fontWeight: 700 }}>{result.total_energy_kwh?.toFixed(1)} <span style={{ fontSize: '0.9rem', color: 'var(--clr-text-muted)' }}>kWh</span></p>
-                </div>
-                <div className="glass-card" style={{ padding: 20, textAlign: 'center' }}>
-                  <p style={{ fontSize: '0.78rem', color: 'var(--clr-text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Savings</p>
-                  <p style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '1.6rem', fontWeight: 700, color: '#06d6a0' }}>
-                    {result.cost_analysis?.savings_percent.toFixed(1)}%
-                  </p>
+
+                <div className="grid-2">
+                  <FormRow label="SoH (%)">
+                    <input className="form-input" type="number" min={50} max={100}
+                      value={form.battery_health_soh}
+                      onChange={e => set('battery_health_soh', +e.target.value)} />
+                  </FormRow>
+                  <FormRow label="Departure">
+                    <input className="form-input" type="time"
+                      value={form.departure_time}
+                      onChange={e => set('departure_time', e.target.value)} />
+                  </FormRow>
                 </div>
               </div>
+            </div>
 
-              {/* Chart */}
-              {chartData && (
-                <div className="glass-card fade-in-up delay-1" style={{ padding: 24 }}>
-                  <h3 style={{ fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Clock size={18} color="#3b82f6" /> Charging Schedule
-                  </h3>
-                  <Bar data={chartData} options={chartOptions} />
+            {/* Environment section */}
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Environment</span>
+              </div>
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+                <div className="grid-2">
+                  <FormRow label="Temperature (°C)">
+                    <input className="form-input" type="number" min={-20} max={50}
+                      value={form.temperature_celsius}
+                      onChange={e => set('temperature_celsius', +e.target.value)} />
+                  </FormRow>
+                  <FormRow label="Weather">
+                    <select className="form-select"
+                      value={form.weather_condition}
+                      onChange={e => set('weather_condition', e.target.value)}>
+                      {['clear', 'cloudy', 'rain', 'snow', 'hot'].map(w => <option key={w}>{w}</option>)}
+                    </select>
+                  </FormRow>
+                </div>
+              </div>
+            </div>
+
+            {/* Prices toggle */}
+            <div className="card">
+              <button type="button" className="card-header"
+                style={{ width: '100%', cursor: 'pointer', background: 'none', border: 'none', color: 'inherit' }}
+                onClick={() => setShowPrices(v => !v)}>
+                <span className="card-title">Electricity Prices</span>
+                {showPrices ? <ChevronUp size={14} color="var(--text-tertiary)" /> : <ChevronDown size={14} color="var(--text-tertiary)" />}
+              </button>
+              {showPrices && (
+                <div className="card-body">
+                  <table style={{ width: '100%' }}>
+                    <tbody>
+                      {DEFAULT_PRICES.map((p, i) => (
+                        <tr key={i}>
+                          <td className="mono" style={{ color: 'var(--text-tertiary)', padding: '2px 0', fontSize: 12 }}>{p.hour}</td>
+                          <td style={{ textAlign: 'right', padding: '2px 0' }}>
+                            <div className="progress-wrap" style={{ display: 'inline-block', width: 60, height: 3, marginRight: 6, verticalAlign: 'middle' }}>
+                              <div className="progress-fill" style={{ width: `${(p.price / 0.25) * 100}%`, background: p.price > 0.18 ? 'var(--danger)' : p.price < 0.09 ? 'var(--success)' : 'var(--warning)' }} />
+                            </div>
+                            <span className="mono" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>${p.price.toFixed(2)}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               )}
+            </div>
 
-              {/* Cost + Wear row */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                {/* Cost */}
-                <div className="glass-card fade-in-up delay-2" style={{ padding: 24 }}>
-                  <h3 style={{ fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <TrendingDown size={18} color="#06d6a0" /> Cost Analysis
-                  </h3>
-                  {result.cost_analysis && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {[
-                        { label: 'Normal Cost', val: `$${result.cost_analysis.normal_cost.toFixed(3)}`, color: 'var(--clr-text-muted)' },
-                        { label: 'Optimized Cost', val: `$${result.cost_analysis.optimized_cost.toFixed(3)}`, color: '#06d6a0' },
-                        { label: 'You Save', val: `$${result.cost_analysis.savings_dollar.toFixed(3)}  (${result.cost_analysis.savings_percent.toFixed(1)}%)`, color: '#3b82f6' },
-                      ].map(row => (
-                        <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 14px', background: 'rgba(255,255,255,0.03)', borderRadius: 8 }}>
-                          <span style={{ color: 'var(--clr-text-muted)', fontSize: '0.88rem' }}>{row.label}</span>
-                          <span style={{ fontWeight: 700, color: row.color }}>{row.val}</span>
+            {error && (
+              <div className="alert alert-error">
+                <AlertCircle size={14} style={{ flexShrink: 0 }} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <button className="btn btn-primary btn-full" type="submit" disabled={loading}>
+              {loading
+                ? <><Loader2 size={14} style={{ animation: 'spin 0.7s linear infinite' }} /> Computing optimal schedule...</>
+                : <><Zap size={14} /> Run Optimizer</>
+              }
+            </button>
+          </form>
+
+          {/* ── RESULTS PANEL ────────────────────────────────── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {!result && !loading && (
+              <div className="card" style={{ padding: '60px 24px', textAlign: 'center' }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: '50%',
+                  background: 'var(--bg-overlay)', border: '1px solid var(--border)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 14px',
+                }}>
+                  <Zap size={22} color="var(--text-tertiary)" />
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4 }}>
+                  No schedule computed yet
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>
+                  Configure your vehicle parameters and click Run Optimizer.
+                </div>
+              </div>
+            )}
+
+            {loading && (
+              <div className="card" style={{ padding: '60px 24px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14 }}>
+                <div className="spinner-lg" />
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Running LP solver + XGBoost ML model...</span>
+              </div>
+            )}
+
+            {result && (
+              <>
+                {/* Summary tiles */}
+                <div className="grid-4 fade-up">
+                  {[
+                    { label: 'Start Time',    value: result.start_charging ?? '—',                       color: 'var(--success)' },
+                    { label: 'Stop Time',     value: result.stop_charging  ?? '—',                       color: 'var(--accent)' },
+                    { label: 'Energy Added',  value: `${result.total_energy_kwh?.toFixed(1) ?? '—'} kWh`, color: 'var(--text-primary)' },
+                    { label: 'Cost Savings',  value: `${result.cost_analysis?.savings_percent.toFixed(1) ?? '—'}%`, color: 'var(--success)' },
+                  ].map(t => (
+                    <div key={t.label} className="stat-tile">
+                      <div className="stat-label">{t.label}</div>
+                      <div className="stat-value mono" style={{ fontSize: 22, color: t.color }}>{t.value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Schedule chart */}
+                {chartData && (
+                  <div className="card fade-up">
+                    <div className="card-header">
+                      <span className="card-title"><Clock size={14} /> Charging Schedule</span>
+                      <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Blue = charging active · Line = price</span>
+                    </div>
+                    <div className="card-body">
+                      <Bar data={chartData} options={chartOptions} />
+                    </div>
+                  </div>
+                )}
+
+                {/* Cost analysis + Wear */}
+                <div className="grid-2 fade-up">
+                  {/* Cost */}
+                  <div className="card">
+                    <div className="card-header">
+                      <span className="card-title"><TrendingDown size={14} /> Cost Breakdown</span>
+                    </div>
+                    {result.cost_analysis && (
+                      <div className="card-body">
+                        <table className="data-table">
+                          <tbody>
+                            {[
+                              { label: 'Normal (unoptimized)', val: `$${result.cost_analysis.normal_cost.toFixed(4)}`,    color: 'var(--text-secondary)' },
+                              { label: 'Optimized cost',       val: `$${result.cost_analysis.optimized_cost.toFixed(4)}`,  color: 'var(--accent)' },
+                              { label: 'Savings',              val: `$${result.cost_analysis.savings_dollar.toFixed(4)}`,  color: 'var(--success)' },
+                              { label: 'Savings %',            val: `${result.cost_analysis.savings_percent.toFixed(1)}%`, color: 'var(--success)' },
+                            ].map(r => (
+                              <tr key={r.label}>
+                                <td style={{ color: 'var(--text-tertiary)', borderBottom: '1px solid var(--border)', padding: '9px 0' }}>{r.label}</td>
+                                <td style={{ textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: r.color, borderBottom: '1px solid var(--border)', padding: '9px 0' }}>{r.val}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Wear */}
+                  <div className="card">
+                    <div className="card-header">
+                      <span className="card-title"><Shield size={14} /> Battery Wear (XGBoost)</span>
+                      {wear && (
+                        <div className={`pill pill-${wear.rating === 'Low' ? 'green' : wear.rating === 'Medium' ? 'yellow' : 'red'}`}>
+                          {wear.rating}
+                        </div>
+                      )}
+                    </div>
+                    {wear && (
+                      <div className="card-body">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+                          <div style={{
+                            width: 60, height: 60, borderRadius: '50%',
+                            border: `3px solid ${wear.rating === 'Low' ? 'var(--success)' : wear.rating === 'Medium' ? 'var(--warning)' : 'var(--danger)'}`,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0,
+                          }}>
+                            <span style={{
+                              fontSize: 17, fontWeight: 700,
+                              color: wear.rating === 'Low' ? 'var(--success)' : wear.rating === 'Medium' ? 'var(--warning)' : 'var(--danger)',
+                              fontFamily: 'JetBrains Mono, monospace',
+                            }}>{wear.total_score.toFixed(0)}</span>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 12, color: 'var(--text-tertiary)', marginBottom: 2 }}>Wear score out of 100</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Lower is better · Powered by ML model</div>
+                          </div>
+                        </div>
+                        <WearBar label="Temperature Impact"    value={wear.temperature_impact} />
+                        <WearBar label="High SoC Stress"      value={wear.high_soc_stress} />
+                        <WearBar label="Fast Charging Penalty" value={wear.fast_charging_penalty} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Explanations */}
+                <div className="card fade-up">
+                  <div className="card-header">
+                    <span className="card-title">Optimizer Explanations</span>
+                  </div>
+                  <div className="card-body">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {result.explanations.map((e, i) => (
+                        <div key={i} style={{
+                          display: 'flex', gap: 10, padding: '8px 12px',
+                          background: 'var(--bg-overlay)', borderRadius: 6,
+                          fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6,
+                        }}>
+                          <span style={{ color: 'var(--accent)', fontWeight: 700, flexShrink: 0 }}>{String(i + 1).padStart(2, '0')}</span>
+                          {e}
                         </div>
                       ))}
                     </div>
-                  )}
+                  </div>
                 </div>
 
-                {/* Wear */}
-                <div className="glass-card fade-in-up delay-3" style={{ padding: 24 }}>
-                  <h3 style={{ fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <Shield size={18} color="#a78bfa" /> Battery Wear (ML)
-                  </h3>
-                  {result.wear_estimate && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
-                      <WearRing score={result.wear_estimate.total_score} rating={result.wear_estimate.rating} />
-                      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {[
-                          { label: 'Temp Impact', val: result.wear_estimate.temperature_impact },
-                          { label: 'SoC Stress', val: result.wear_estimate.high_soc_stress },
-                          { label: 'Fast Charge', val: result.wear_estimate.fast_charging_penalty },
-                        ].map(row => (
-                          <div key={row.label}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.78rem', color: 'var(--clr-text-muted)', marginBottom: 3 }}>
-                              <span>{row.label}</span><span>{row.val.toFixed(1)}</span>
-                            </div>
-                            <div style={{ height: 5, borderRadius: 3, background: 'rgba(255,255,255,0.06)' }}>
-                              <div style={{ height: '100%', width: `${Math.min(row.val, 100)}%`, background: '#a78bfa', borderRadius: 3, transition: 'width 0.6s' }} />
-                            </div>
-                          </div>
-                        ))}
-                      </div>
+                {/* Battery advice */}
+                {result.battery_health_advice.length > 0 && (
+                  <div className="card fade-up">
+                    <div className="card-header">
+                      <span className="card-title"><Shield size={14} /> Health Recommendations</span>
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Explanations */}
-              <div className="glass-card fade-in-up delay-4" style={{ padding: 24 }}>
-                <h3 style={{ fontWeight: 700, marginBottom: 16 }}>AI Explanations</h3>
-                <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  {result.explanations.map((e, i) => (
-                    <li key={i} style={{ display: 'flex', gap: 10, color: 'var(--clr-text-muted)', fontSize: '0.9rem', lineHeight: 1.6 }}>
-                      <span style={{ color: '#3b82f6', flexShrink: 0, fontWeight: 700 }}>→</span> {e}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Health advice */}
-              {result.battery_health_advice.length > 0 && (
-                <div className="glass-card fade-in-up delay-4" style={{ padding: 24, borderColor: 'rgba(6,214,160,0.2)' }}>
-                  <h3 style={{ fontWeight: 700, marginBottom: 16, color: '#06d6a0' }}>Battery Health Advice</h3>
-                  <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {result.battery_health_advice.map((a, i) => (
-                      <li key={i} style={{ display: 'flex', gap: 10, color: 'var(--clr-text-muted)', fontSize: '0.88rem' }}>
-                        <span style={{ color: '#06d6a0' }}>✓</span> {a}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </>
-          )}
+                    <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {result.battery_health_advice.map((a, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 9, fontSize: 12, color: 'var(--text-secondary)' }}>
+                          <span style={{ color: 'var(--success)', flexShrink: 0 }}>✓</span> {a}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
-    </div>
+    </>
   )
 }

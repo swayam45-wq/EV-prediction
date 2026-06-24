@@ -1,204 +1,228 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Zap, Battery, TrendingDown, Shield, ArrowRight, Cpu, AlertCircle } from 'lucide-react'
+import {
+  Zap, Battery, TrendingDown, Shield, ArrowRight,
+  Thermometer, Clock, Activity, AlertTriangle,
+} from 'lucide-react'
 import { getBatteryHealth } from '../api'
 import type { BatteryHealthResponse } from '../types'
 
-/* ── Animated battery gauge SVG ──────────────────────────── */
-function BatteryGauge({ pct }: { pct: number }) {
-  const r = 80, cx = 100, cy = 100
-  const circumference = 2 * Math.PI * r
-  const dash = (pct / 100) * circumference
-  const color = pct > 60 ? '#06d6a0' : pct > 30 ? '#f59e0b' : '#ef4444'
+/* ── Circular SoC gauge ───────────────────────────────────── */
+function SoCGauge({ pct }: { pct: number }) {
+  const r = 54, cx = 64, cy = 64
+  const circ = 2 * Math.PI * r
+  const filled = (pct / 100) * circ
+  const color = pct > 50 ? '#10b981' : pct > 25 ? '#f59e0b' : '#ef4444'
 
   return (
-    <svg viewBox="0 0 200 200" width="200" height="200" style={{ filter: `drop-shadow(0 0 16px ${color}60)` }}>
+    <svg width="128" height="128" viewBox="0 0 128 128">
       {/* Track */}
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="14" />
-      {/* Progress */}
-      <circle
-        cx={cx} cy={cy} r={r} fill="none"
-        stroke={color} strokeWidth="14"
-        strokeDasharray={`${dash} ${circumference}`}
+      <circle cx={cx} cy={cy} r={r}
+        fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="10" />
+      {/* Fill */}
+      <circle cx={cx} cy={cy} r={r}
+        fill="none" stroke={color} strokeWidth="10"
+        strokeDasharray={`${filled} ${circ}`}
         strokeLinecap="round"
-        transform="rotate(-90 100 100)"
-        style={{ transition: 'stroke-dasharray 1s ease' }}
-      />
-      {/* Center text */}
-      <text x={cx} y={cy - 8} textAnchor="middle" fill="#f0f4ff"
-        fontSize="32" fontWeight="700" fontFamily="Space Grotesk, sans-serif">
+        transform="rotate(-90 64 64)"
+        style={{ transition: 'stroke-dasharray 1s ease' }} />
+      {/* Center */}
+      <text x={cx} y={58} textAnchor="middle"
+        fill="#f1f3f8" fontSize="22" fontWeight="700"
+        fontFamily="Inter, sans-serif" letterSpacing="-0.03em">
         {pct}%
       </text>
-      <text x={cx} y={cy + 16} textAnchor="middle" fill="#8b9dc3" fontSize="12">
-        State of Charge
+      <text x={cx} y={74} textAnchor="middle"
+        fill="#4a5060" fontSize="9" fontWeight="600"
+        fontFamily="Inter, sans-serif" letterSpacing="0.06em">
+        STATE OF CHARGE
       </text>
     </svg>
   )
 }
 
-/* ── Stat card ────────────────────────────────────────────── */
-function StatCard({ icon: Icon, label, value, unit, color = '#3b82f6', delay = 0 }: {
-  icon: React.ElementType; label: string; value: string | number;
-  unit?: string; color?: string; delay?: number
-}) {
+/* ── Mini metric row ─────────────────────────────────────── */
+function MetricRow({ label, value, unit, color = 'var(--text-primary)' }:
+  { label: string; value: string | number; unit?: string; color?: string }) {
   return (
-    <div className={`glass-card fade-in-up delay-${delay}`} style={{ padding: 24 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <p style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--clr-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{label}</p>
-          <p className="stat-value" style={{ color }}>
-            {value}
-            {unit && <span style={{ fontSize: '1.1rem', fontWeight: 500, color: 'var(--clr-text-muted)', marginLeft: 4 }}>{unit}</span>}
-          </p>
-        </div>
-        <div style={{
-          width: 44, height: 44, borderRadius: 12,
-          background: `${color}18`, border: `1px solid ${color}30`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Icon size={22} color={color} />
-        </div>
-      </div>
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+      padding: '10px 0', borderBottom: '1px solid var(--border)',
+    }}>
+      <span style={{ fontSize: 12, color: 'var(--text-tertiary)', fontWeight: 500 }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 700, color, fontVariantNumeric: 'tabular-nums' }}>
+        {value}{unit && <span style={{ fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 2 }}>{unit}</span>}
+      </span>
     </div>
   )
 }
 
 export default function Home() {
   const [health, setHealth] = useState<BatteryHealthResponse | null>(null)
-  const [backendUp, setBackendUp] = useState(true)
+  const [offline, setOffline] = useState(false)
 
   useEffect(() => {
-    getBatteryHealth()
-      .then(setHealth)
-      .catch(() => setBackendUp(false))
-      .finally(() => {/* no loading indicator on home */})
+    getBatteryHealth().then(setHealth).catch(() => setOffline(true))
   }, [])
 
-  const soc = 72 // Demo value — Phase 4 will pull from vehicle API
-  const summary = health?.summary
+  const s = health?.summary
 
   return (
-    <div className="page">
-      {/* ── Hero ────────────────────────────────────────────── */}
-      <div className="fade-in-up" style={{ textAlign: 'center', marginBottom: 56, paddingTop: 16 }}>
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          padding: '6px 18px', borderRadius: 999,
-          background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.25)',
-          fontSize: '0.82rem', fontWeight: 600, color: '#60a5fa',
-          marginBottom: 20,
-        }}>
-          <Cpu size={14} /> AI-Powered Charging Intelligence
-        </div>
-
-        <h1 className="page-title gradient-text" style={{ fontSize: 'clamp(2rem, 5vw, 3.2rem)', marginBottom: 16 }}>
-          Smart EV Charging
-        </h1>
-        <p style={{ color: 'var(--clr-text-muted)', fontSize: '1.05rem', maxWidth: 540, margin: '0 auto 32px' }}>
-          Minimize cost, protect battery health, and ensure your car is always ready —
-          powered by Linear Programming and XGBoost ML.
-        </p>
-
-        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Link to="/optimizer">
-            <button className="btn-primary">
-              <Zap size={18} /> Optimize Now <ArrowRight size={16} />
-            </button>
-          </Link>
-          <Link to="/analytics">
-            <button className="btn-secondary">
-              View Analytics
-            </button>
-          </Link>
+    <>
+      {/* Page header */}
+      <div className="page-header">
+        <div className="page-header-inner">
+          <div className="page-eyebrow">Overview</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h1 className="page-title">Dashboard</h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div className={`pill pill-${offline ? 'yellow' : 'green'}`}>
+                <div className="pill-dot" />
+                {offline ? 'Backend Offline' : 'System Online'}
+              </div>
+              <Link to="/optimizer">
+                <button className="btn btn-primary">
+                  <Zap size={14} /> New Session <ArrowRight size={13} />
+                </button>
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
 
-      {/* ── Backend status banner ────────────────────────────── */}
-      {!backendUp && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 10, padding: '12px 20px',
-          background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
-          borderRadius: 12, marginBottom: 24, color: '#f59e0b', fontSize: '0.88rem',
-        }}>
-          <AlertCircle size={18} />
-          <span>Backend not reachable — start the FastAPI server on port 8000. Demo values shown below.</span>
-        </div>
-      )}
+      <div className="page-body">
 
-      {/* ── Battery gauge + stats row ────────────────────────── */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 24, alignItems: 'center', marginBottom: 32 }}>
-        {/* Gauge */}
-        <div className="glass-card fade-in-up" style={{
-          padding: 32, display: 'flex', flexDirection: 'column',
-          alignItems: 'center', gap: 16,
-        }}>
-          <BatteryGauge pct={soc} />
-          <div style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: '0.8rem', color: 'var(--clr-text-muted)', marginBottom: 4 }}>Current Vehicle</p>
-            <p style={{ fontWeight: 700, color: 'var(--clr-text)' }}>Demo EV · 75 kWh</p>
-            <div className="badge badge-green" style={{ marginTop: 8 }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#06d6a0', animation: 'pulse-glow 2s infinite' }} />
-              Plugged In
+        {offline && (
+          <div className="alert alert-warning fade-up" style={{ marginBottom: 20 }}>
+            <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+            <span>
+              Backend server not reachable. Start it with&nbsp;
+              <code style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, background: 'rgba(0,0,0,0.3)', padding: '1px 6px', borderRadius: 4 }}>
+                python -m uvicorn main:app --reload --port 8000
+              </code>
+            </span>
+          </div>
+        )}
+
+        {/* ── Top stats row ─────────────────────────────────── */}
+        <div className="grid-4 fade-up" style={{ marginBottom: 20 }}>
+          {[
+            { icon: Battery,      label: 'State of Health',    value: s?.inferred_soh_percent?.toFixed(1) ?? '—', unit: '%',    color: 'var(--success)',  boxCls: 'icon-box-green' },
+            { icon: TrendingDown, label: 'Avg Cost Savings',   value: s?.avg_savings_percent?.toFixed(1)   ?? '—', unit: '%',    color: 'var(--accent)',   boxCls: 'icon-box-blue' },
+            { icon: Zap,          label: 'Total Sessions',      value: s?.total_charging_sessions ?? '—',           unit: '',     color: 'var(--text-primary)', boxCls: 'icon-box-blue' },
+            { icon: Shield,       label: 'Avg Wear Score',     value: s?.avg_wear_score?.toFixed(1)         ?? '—', unit: '/100', color: s && s.avg_wear_score < 20 ? 'var(--success)' : 'var(--warning)', boxCls: s && s.avg_wear_score < 20 ? 'icon-box-green' : 'icon-box-yellow' },
+          ].map(({ icon: Icon, label, value, unit, color, boxCls }) => (
+            <div key={label} className="stat-tile">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                <div className={`icon-box ${boxCls}`}><Icon size={16} /></div>
+              </div>
+              <div className="stat-label">{label}</div>
+              <div className="stat-value" style={{ color }}>
+                {value}<span className="stat-unit">{unit}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* ── Battery status + vehicle info ─────────────────── */}
+        <div className="grid-2 fade-up" style={{ marginBottom: 20 }}>
+          {/* Battery gauge card */}
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title"><Battery size={14} /> Battery Status</span>
+              <div className="pill pill-green"><div className="pill-dot" />Plugged In</div>
+            </div>
+            <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
+              <SoCGauge pct={72} />
+              <div style={{ flex: 1 }}>
+                <MetricRow label="Current SoC"         value={72}        unit="%" color="var(--success)" />
+                <MetricRow label="Estimated Range"     value="286"       unit=" km" />
+                <MetricRow label="Battery Capacity"    value="75"        unit=" kWh" />
+                <MetricRow label="Charge Rate"         value="11.0"      unit=" kW" />
+                <div style={{ paddingTop: 10 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
+                    <span>Current · 72%</span><span>Full · 100%</span>
+                  </div>
+                  <div className="progress-wrap">
+                    <div className="progress-fill" style={{ width: '72%', background: 'var(--success)' }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Charging conditions */}
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title"><Activity size={14} /> Charging Conditions</span>
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Live</span>
+            </div>
+            <div className="card-body">
+              <MetricRow label="Ambient Temperature"  value="22"   unit="°C" />
+              <MetricRow label="Battery Temperature"  value="27"   unit="°C" />
+              <MetricRow label="Weather"              value="Clear"  />
+              <MetricRow label="Optimal Temp Range"   value="15–35" unit="°C" color="var(--success)" />
+              <MetricRow label="Departure Time"       value="08:00"  />
+              <MetricRow label="Time Until Departure" value="6h 42m" color="var(--accent)" />
             </div>
           </div>
         </div>
 
-        {/* Stats grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <StatCard icon={Battery}     label="Battery Health (SoH)" value={summary?.inferred_soh_percent ?? 96} unit="%" color="#06d6a0" delay={1} />
-          <StatCard icon={TrendingDown} label="Avg Savings"          value={summary?.avg_savings_percent ?? 0} unit="%" color="#3b82f6" delay={2} />
-          <StatCard icon={Zap}          label="Total Sessions"        value={summary?.total_charging_sessions ?? 0} color="#a78bfa" delay={3} />
-          <StatCard icon={Shield}       label="Avg Wear Score"        value={summary ? `${summary.avg_wear_score}/100` : '—'} color={summary && summary.avg_wear_score < 20 ? '#06d6a0' : '#f59e0b'} delay={4} />
-        </div>
-      </div>
-
-      {/* ── Feature cards ────────────────────────────────────── */}
-      <h2 style={{ fontFamily: 'Space Grotesk, sans-serif', fontSize: '1.3rem', fontWeight: 700, marginBottom: 20 }}>
-        How It Works
-      </h2>
-      <div className="grid-3">
-        {[
-          {
-            icon: '⚡', title: 'LP Optimization', color: '#3b82f6',
-            desc: 'Coin-or CBC solver finds the minimum-cost hourly charging schedule using Linear Programming — mathematically guaranteed optimal.',
-          },
-          {
-            icon: '🤖', title: 'XGBoost ML Model', color: '#a78bfa',
-            desc: 'Trained on 15,000 charging sessions, our XGBoost model predicts battery wear (R²=0.99) so you get personalized health advice.',
-          },
-          {
-            icon: '💰', title: 'Cost Intelligence', color: '#06d6a0',
-            desc: 'Dynamic pricing awareness shifts charging to off-peak hours. Users save 15–30% on electricity costs every session.',
-          },
-        ].map((f, i) => (
-          <div key={i} className={`glass-card fade-in-up delay-${i + 1}`} style={{ padding: 28 }}>
-            <div style={{
-              width: 52, height: 52, borderRadius: 14,
-              background: `${f.color}18`, border: `1px solid ${f.color}30`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: 24, marginBottom: 16,
-            }}>{f.icon}</div>
-            <h3 style={{ fontWeight: 700, marginBottom: 8, color: f.color }}>{f.title}</h3>
-            <p style={{ color: 'var(--clr-text-muted)', fontSize: '0.9rem', lineHeight: 1.7 }}>{f.desc}</p>
+        {/* ── How the system works ──────────────────────────── */}
+        <div className="card fade-up">
+          <div className="card-header">
+            <span className="card-title">System Overview</span>
           </div>
-        ))}
-      </div>
-
-      {/* ── Tips ─────────────────────────────────────────────── */}
-      {health?.tips && health.tips.length > 0 && (
-        <div className="glass-card fade-in-up" style={{ padding: 28, marginTop: 28 }}>
-          <h3 style={{ fontWeight: 700, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Shield size={18} color="#06d6a0" /> Battery Health Tips
-          </h3>
-          <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {health.tips.map((tip, i) => (
-              <li key={i} style={{ display: 'flex', gap: 10, color: 'var(--clr-text-muted)', fontSize: '0.92rem' }}>
-                <span style={{ color: '#06d6a0', flexShrink: 0 }}>✓</span> {tip}
-              </li>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', borderTop: 'none' }}>
+            {[
+              {
+                icon: Zap,         color: 'var(--accent)',
+                step: '01',        label: 'LP Optimization',
+                desc: 'Coin-or CBC linear solver computes the minimum-cost hourly charging schedule satisfying all constraints — battery capacity, departure time, charge rate limits.',
+              },
+              {
+                icon: Shield,      color: 'var(--success)',
+                step: '02',        label: 'ML Wear Prediction',
+                desc: 'XGBoost model (R²=0.993) trained on 15,000 physics-informed samples predicts battery degradation from temperature, C-rate, and target SoC.',
+              },
+              {
+                icon: TrendingDown, color: 'var(--warning)',
+                step: '03',        label: 'Cost Intelligence',
+                desc: 'Dynamic pricing awareness shifts load to off-peak windows. Every session is persisted to SQLite for trend analysis and model improvement.',
+              },
+            ].map(({ icon: Icon, color, step, label, desc }) => (
+              <div key={step} style={{
+                padding: '20px 24px',
+                borderRight: '1px solid var(--border)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                  <Icon size={15} color={color} />
+                  <span style={{ fontSize: 11, fontWeight: 700, color, letterSpacing: '0.06em' }}>STEP {step}</span>
+                </div>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>{label}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-tertiary)', lineHeight: 1.7 }}>{desc}</div>
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
-      )}
-    </div>
+
+        {/* Health tips */}
+        {health?.tips && (
+          <div className="card fade-up" style={{ marginTop: 20 }}>
+            <div className="card-header">
+              <span className="card-title"><Thermometer size={14} /> Battery Care Recommendations</span>
+            </div>
+            <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {health.tips.map((tip, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <Clock size={12} color="var(--text-tertiary)" style={{ flexShrink: 0, marginTop: 2 }} />
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{tip}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </>
   )
 }

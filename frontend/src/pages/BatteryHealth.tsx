@@ -4,43 +4,58 @@ import {
   LineElement, Title, Tooltip, Legend, Filler,
 } from 'chart.js'
 import { Line } from 'react-chartjs-2'
-import { Battery, Shield, Cpu, TrendingDown, AlertTriangle } from 'lucide-react'
+import { Battery, Shield, Cpu, TrendingDown, AlertTriangle, Zap } from 'lucide-react'
 import { getBatteryHealth } from '../api'
 import type { BatteryHealthResponse } from '../types'
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler)
 
-/* ── SoH Arc gauge ───────────────────────────────────────── */
-function SohGauge({ soh }: { soh: number }) {
-  const color = soh > 85 ? '#06d6a0' : soh > 70 ? '#f59e0b' : '#ef4444'
+/* ── Arc SoH Gauge ───────────────────────────────────────── */
+function SoHGauge({ soh }: { soh: number }) {
+  const color = soh > 85 ? 'var(--success)' : soh > 70 ? 'var(--warning)' : 'var(--danger)'
   const label = soh > 85 ? 'Excellent' : soh > 70 ? 'Good' : 'Degraded'
-  const pct = (soh - 0) / 100
-  // 270-degree arc (from 135° to 405°)
-  const r = 80, cx = 110, cy = 110
-  const startAngle = 135 * (Math.PI / 180)
-  const endAngle = (135 + 270 * pct) * (Math.PI / 180)
-  const arc = (angle: number) => [cx + r * Math.cos(angle), cy + r * Math.sin(angle)]
-  const [sx, sy] = arc(startAngle)
-  const [ex, ey] = arc(endAngle)
-  const largeArc = 270 * pct > 180 ? 1 : 0
+  const pill  = soh > 85 ? 'pill-green' : soh > 70 ? 'pill-yellow' : 'pill-red'
+
+  // 240° arc: starts at 150°, sweeps clockwise
+  const r = 54, cx = 64, cy = 70
+  const toRad = (d: number) => d * Math.PI / 180
+  const startA = toRad(150)
+  const sweep  = 240 * (soh / 100)
+  const endA   = toRad(150 + sweep)
+  const large  = sweep > 180 ? 1 : 0
+  const pt     = (a: number) => [cx + r * Math.cos(a), cy + r * Math.sin(a)]
+  const [sx, sy] = pt(startA)
+  const [ex, ey] = pt(endA)
+  const [tx, ty] = pt(toRad(150 + 240))
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-      <svg width="220" height="160" viewBox="0 0 220 160" style={{ filter: `drop-shadow(0 0 20px ${color}40)` }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+      <svg width="128" height="120" viewBox="0 0 128 120">
         {/* Track */}
-        <path d={`M ${arc(startAngle).join(' ')} A ${r} ${r} 0 1 1 ${arc(405 * Math.PI / 180).join(' ')}`}
-          fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="14" strokeLinecap="round" />
-        {/* Arc */}
-        {soh > 0 && <path d={`M ${sx} ${sy} A ${r} ${r} 0 ${largeArc} 1 ${ex} ${ey}`}
-          fill="none" stroke={color} strokeWidth="14" strokeLinecap="round"
-          style={{ transition: 'all 1s ease' }} />}
+        <path
+          d={`M ${pt(toRad(150)).join(' ')} A ${r} ${r} 0 1 1 ${tx} ${ty}`}
+          fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="9" strokeLinecap="round" />
+        {/* Fill */}
+        {soh > 0 && (
+          <path
+            d={`M ${sx} ${sy} A ${r} ${r} 0 ${large} 1 ${ex} ${ey}`}
+            fill="none" stroke={color} strokeWidth="9" strokeLinecap="round"
+            style={{ transition: 'all 1.2s ease' }} />
+        )}
         {/* Value */}
-        <text x={cx} y={cy + 4} textAnchor="middle" fill="#f0f4ff"
-          fontSize="30" fontWeight="700" fontFamily="Space Grotesk, sans-serif">{soh.toFixed(1)}%</text>
-        <text x={cx} y={cy + 22} textAnchor="middle" fill="#8b9dc3" fontSize="11">State of Health</text>
+        <text x={cx} y={cy - 4} textAnchor="middle"
+          fill="#f1f3f8" fontSize="22" fontWeight="700"
+          fontFamily="Inter, sans-serif" letterSpacing="-0.03em">
+          {soh.toFixed(1)}%
+        </text>
+        <text x={cx} y={cy + 13} textAnchor="middle"
+          fill="#4a5060" fontSize="9" fontWeight="600"
+          fontFamily="Inter, sans-serif" letterSpacing="0.08em">
+          STATE OF HEALTH
+        </text>
       </svg>
-      <div className={`badge badge-${soh > 85 ? 'green' : soh > 70 ? 'yellow' : 'red'}`}>
-        {label}
+      <div className={`pill ${pill}`}>
+        <div className="pill-dot" /> {label}
       </div>
     </div>
   )
@@ -58,161 +73,203 @@ export default function BatteryHealth() {
       .finally(() => setLoading(false))
   }, [])
 
-  const wearHistory = data?.wear_history ?? []
+  const history = data?.wear_history ?? []
 
   const lineData = {
-    labels: wearHistory.map((_, i) => `Session ${i + 1}`),
+    labels: history.map((_, i) => `#${i + 1}`),
     datasets: [{
       label: 'Wear Score',
-      data: wearHistory.map(h => h.wear_score),
-      borderColor: '#3b82f6',
-      backgroundColor: 'rgba(59,130,246,0.1)',
-      borderWidth: 2, tension: 0.4, fill: true,
-      pointBackgroundColor: wearHistory.map(h =>
-        h.wear_rating === 'Low' ? '#06d6a0' : h.wear_rating === 'Medium' ? '#f59e0b' : '#ef4444'
+      data: history.map(h => h.wear_score),
+      borderColor: 'rgba(14,165,233,0.8)',
+      backgroundColor: 'rgba(14,165,233,0.06)',
+      borderWidth: 1.5, tension: 0.4, fill: true,
+      pointBackgroundColor: history.map(h =>
+        h.wear_rating === 'Low' ? '#10b981' : h.wear_rating === 'Medium' ? '#f59e0b' : '#ef4444'
       ),
-      pointRadius: 5,
+      pointRadius: 4,
     }],
   }
 
   const lineOptions = {
     responsive: true,
     plugins: {
-      legend: { labels: { color: '#8b9dc3' } },
+      legend: { labels: { color: '#8b919e', font: { size: 11 }, boxWidth: 12 } },
     },
     scales: {
-      x: { ticks: { color: '#4a5a7a' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+      x: { ticks: { color: '#4a5060', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.04)' } },
       y: {
         min: 0, max: 100,
-        ticks: { color: '#8b9dc3' }, grid: { color: 'rgba(255,255,255,0.04)' },
-        title: { display: true, text: 'Wear Score', color: '#8b9dc3' },
+        ticks: { color: '#8b919e', font: { size: 11 } },
+        grid: { color: 'rgba(255,255,255,0.04)' },
+        title: { display: true, text: 'Wear Score', color: '#8b919e', font: { size: 11 } },
       },
     },
   }
 
+  const s = data?.summary
+
   return (
-    <div className="page">
-      <h1 className="page-title fade-in-up">Battery Health</h1>
-      <p className="page-subtitle fade-in-up delay-1">
-        Real-time battery State of Health, wear trend analysis, and ML model insights.
-      </p>
-
-      {loading && (
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 80 }}>
-          <div className="spinner" />
+    <>
+      {/* Header */}
+      <div className="page-header">
+        <div className="page-header-inner">
+          <div className="page-eyebrow">Health Monitoring</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <h1 className="page-title">Battery Health</h1>
+            {data && (
+              <div className="pill pill-blue">
+                <Cpu size={10} />
+                {(data.ml_model_info as { status?: string }).status === 'ml_model_active'
+                  ? 'XGBoost Active'
+                  : 'Heuristic Mode'}
+              </div>
+            )}
+          </div>
         </div>
-      )}
+      </div>
 
-      {error && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '14px 20px',
-          background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)',
-          borderRadius: 12, color: '#f59e0b', marginBottom: 24 }}>
-          <AlertTriangle size={18} />
-          Backend not reachable — start the FastAPI server on port 8000.
-        </div>
-      )}
+      <div className="page-body">
+        {loading && (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 0' }}>
+            <div className="spinner-lg" />
+          </div>
+        )}
 
-      {data && (
-        <>
-          {/* SoH gauge + summary row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 24, marginBottom: 24 }}>
-            <div className="glass-card fade-in-up" style={{ padding: 32, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 20 }}>
-              <SohGauge soh={data.summary.inferred_soh_percent} />
-              <div className="divider" style={{ width: '100%' }} />
-              <div style={{ textAlign: 'center' }}>
-                <p style={{ fontSize: '0.78rem', color: 'var(--clr-text-muted)', marginBottom: 4 }}>ML Model Status</p>
-                <div className="badge badge-blue">
-                  <Cpu size={12} />
-                  {(data.ml_model_info as { status?: string }).status === 'ml_model_active' ? 'XGBoost Active' : 'Heuristic Mode'}
+        {error && (
+          <div className="alert alert-warning fade-up" style={{ marginBottom: 20 }}>
+            <AlertTriangle size={15} style={{ flexShrink: 0 }} />
+            Backend not reachable — start the FastAPI server on port 8000.
+          </div>
+        )}
+
+        {data && (
+          <>
+            {/* SoH gauge + stats */}
+            <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 16, marginBottom: 16 }}>
+              {/* Gauge card */}
+              <div className="card" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '28px 20px', gap: 20 }}>
+                <SoHGauge soh={s?.inferred_soh_percent ?? 0} />
+                <div className="divider" style={{ width: '100%' }} />
+                <div style={{ width: '100%' }}>
+                  {[
+                    { label: 'ML Model', value: (data.ml_model_info as { model_type?: string }).model_type ?? 'XGBoost' },
+                    { label: 'Sessions',  value: s?.total_charging_sessions ?? 0 },
+                  ].map(r => (
+                    <div key={r.label} style={{
+                      display: 'flex', justifyContent: 'space-between',
+                      fontSize: 11, padding: '6px 0',
+                      borderBottom: '1px solid var(--border)',
+                      color: 'var(--text-tertiary)',
+                    }}>
+                      <span>{r.label}</span>
+                      <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{r.value}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-              {[
-                { icon: Battery,     label: 'Total Sessions',   val: data.summary.total_charging_sessions,                     color: '#3b82f6',  unit: '' },
-                { icon: TrendingDown,label: 'Avg Savings',       val: data.summary.avg_savings_percent.toFixed(1),              color: '#06d6a0',  unit: '%' },
-                { icon: Shield,      label: 'Avg Wear Score',    val: data.summary.avg_wear_score.toFixed(1),                   color: '#a78bfa',  unit: '/100' },
-                { icon: Battery,     label: 'Total Energy',      val: data.summary.total_energy_charged_kwh.toFixed(1),         color: '#f59e0b',  unit: 'kWh' },
-              ].map(({ icon: Icon, label, val, color, unit }, i) => (
-                <div key={label} className={`glass-card fade-in-up delay-${i + 1}`} style={{ padding: 24 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div>
-                      <p style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--clr-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>{label}</p>
-                      <p className="stat-value" style={{ color }}>
-                        {val}<span style={{ fontSize: '1rem', color: 'var(--clr-text-muted)', marginLeft: 3 }}>{unit}</span>
-                      </p>
+              {/* Stats grid */}
+              <div className="grid-2" style={{ alignContent: 'start' }}>
+                {[
+                  { icon: Battery,      label: 'Total Sessions',       value: s?.total_charging_sessions ?? 0,               unit: '',    color: 'var(--accent)',   cls: 'icon-box-blue' },
+                  { icon: TrendingDown, label: 'Avg Cost Savings',     value: `${(s?.avg_savings_percent ?? 0).toFixed(1)}`,  unit: '%',   color: 'var(--success)',  cls: 'icon-box-green' },
+                  { icon: Shield,       label: 'Avg Wear Score',       value: `${(s?.avg_wear_score ?? 0).toFixed(1)}`,       unit: '/100',color: 'var(--warning)',  cls: 'icon-box-yellow' },
+                  { icon: Zap,          label: 'Total Energy Charged', value: `${(s?.total_energy_charged_kwh ?? 0).toFixed(1)}`, unit: 'kWh', color: 'var(--text-primary)', cls: 'icon-box-blue' },
+                ].map(({ icon: Icon, label, value, unit, color, cls }) => (
+                  <div key={label} className="stat-tile">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
+                      <div className={`icon-box ${cls}`}><Icon size={15} /></div>
                     </div>
-                    <div style={{ width: 44, height: 44, borderRadius: 12, background: `${color}18`, border: `1px solid ${color}30`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Icon size={22} color={color} />
+                    <div className="stat-label">{label}</div>
+                    <div className="stat-value" style={{ color, fontSize: 24 }}>
+                      {value}<span className="stat-unit">{unit}</span>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Wear trend chart */}
-          <div className="glass-card fade-in-up delay-2" style={{ padding: 28, marginBottom: 24 }}>
-            <h2 style={{ fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
-              <TrendingDown size={18} color="#3b82f6" /> Wear Score Trend
-            </h2>
-            {wearHistory.length > 0
-              ? <Line data={lineData} options={lineOptions} />
-              : <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--clr-text-muted)' }}>
-                  No charging sessions yet — run the optimizer to see your wear trend!
-                </div>
-            }
-          </div>
-
-          {/* Recent sessions table */}
-          {wearHistory.length > 0 && (
-            <div className="glass-card fade-in-up delay-3" style={{ padding: 28, marginBottom: 24 }}>
-              <h2 style={{ fontWeight: 700, marginBottom: 20 }}>Recent Sessions</h2>
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      {['Session', 'Wear Score', 'Rating', 'Target SoC', 'Temp (°C)', 'Date'].map(h => (
-                        <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: '0.75rem', fontWeight: 600, color: 'var(--clr-text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', borderBottom: '1px solid var(--clr-border)' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {wearHistory.map((s, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-                        <td style={{ padding: '12px 14px', color: 'var(--clr-text-muted)', fontSize: '0.88rem' }}>#{s.session_id}</td>
-                        <td style={{ padding: '12px 14px', fontWeight: 700, color: s.wear_rating === 'Low' ? '#06d6a0' : s.wear_rating === 'Medium' ? '#f59e0b' : '#ef4444' }}>{s.wear_score?.toFixed(1)}</td>
-                        <td style={{ padding: '12px 14px' }}>
-                          <span className={`badge badge-${s.wear_rating === 'Low' ? 'green' : s.wear_rating === 'Medium' ? 'yellow' : 'red'}`}>{s.wear_rating}</span>
-                        </td>
-                        <td style={{ padding: '12px 14px', color: 'var(--clr-text-muted)', fontSize: '0.88rem' }}>{s.target_soc}%</td>
-                        <td style={{ padding: '12px 14px', color: 'var(--clr-text-muted)', fontSize: '0.88rem' }}>{s.temperature}°C</td>
-                        <td style={{ padding: '12px 14px', color: 'var(--clr-text-faint)', fontSize: '0.82rem' }}>{s.created_at ? new Date(s.created_at).toLocaleDateString() : '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                ))}
               </div>
             </div>
-          )}
 
-          {/* Tips */}
-          <div className="glass-card fade-in-up delay-4" style={{ padding: 28, borderColor: 'rgba(6,214,160,0.2)' }}>
-            <h2 style={{ fontWeight: 700, marginBottom: 16, color: '#06d6a0', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Shield size={18} /> Longevity Tips
-            </h2>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
-              {data.tips.map((tip, i) => (
-                <div key={i} style={{ display: 'flex', gap: 10, padding: '12px 16px', background: 'rgba(6,214,160,0.05)', borderRadius: 10, border: '1px solid rgba(6,214,160,0.1)' }}>
-                  <span style={{ color: '#06d6a0', fontSize: '1rem', flexShrink: 0 }}>✓</span>
-                  <p style={{ color: 'var(--clr-text-muted)', fontSize: '0.88rem', lineHeight: 1.6 }}>{tip}</p>
-                </div>
-              ))}
+            {/* Wear trend chart */}
+            <div className="card fade-up" style={{ marginBottom: 16 }}>
+              <div className="card-header">
+                <span className="card-title"><TrendingDown size={14} /> Wear Score History</span>
+                <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
+                  Dots: green=Low · amber=Medium · red=High
+                </span>
+              </div>
+              <div className="card-body">
+                {history.length > 0
+                  ? <Line data={lineData} options={lineOptions} />
+                  : (
+                    <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-tertiary)', fontSize: 13 }}>
+                      No sessions recorded yet — run the Optimizer to populate history.
+                    </div>
+                  )}
+              </div>
             </div>
-          </div>
-        </>
-      )}
-    </div>
+
+            {/* Sessions table */}
+            {history.length > 0 && (
+              <div className="card fade-up" style={{ marginBottom: 16 }}>
+                <div className="card-header">
+                  <span className="card-title">Session Log</span>
+                  <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Last {history.length} sessions</span>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        {['Session', 'Wear Score', 'Rating', 'Target SoC', 'Temp', 'Date'].map(h => (
+                          <th key={h}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {history.map((s, i) => (
+                        <tr key={i}>
+                          <td className="mono" style={{ color: 'var(--text-tertiary)' }}>#{s.session_id}</td>
+                          <td className="mono" style={{ fontWeight: 700, color: s.wear_rating === 'Low' ? 'var(--success)' : s.wear_rating === 'Medium' ? 'var(--warning)' : 'var(--danger)' }}>
+                            {s.wear_score?.toFixed(1)}
+                          </td>
+                          <td>
+                            <div className={`pill pill-${s.wear_rating === 'Low' ? 'green' : s.wear_rating === 'Medium' ? 'yellow' : 'red'}`}>
+                              <div className="pill-dot" /> {s.wear_rating}
+                            </div>
+                          </td>
+                          <td className="mono">{s.target_soc}%</td>
+                          <td className="mono">{s.temperature}°C</td>
+                          <td style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
+                            {s.created_at ? new Date(s.created_at).toLocaleDateString() : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Tips */}
+            <div className="card fade-up">
+              <div className="card-header">
+                <span className="card-title"><Shield size={14} /> Battery Longevity Recommendations</span>
+              </div>
+              <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+                {data.tips.map((tip, i) => (
+                  <div key={i} style={{
+                    display: 'flex', gap: 10, padding: '10px 14px',
+                    background: 'var(--bg-overlay)', borderRadius: 8,
+                    border: '1px solid var(--border)',
+                  }}>
+                    <span style={{ color: 'var(--success)', fontSize: 12, flexShrink: 0, marginTop: 1 }}>✓</span>
+                    <p style={{ fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.6 }}>{tip}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </>
   )
 }
