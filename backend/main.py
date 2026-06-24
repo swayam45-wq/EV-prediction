@@ -21,6 +21,8 @@ from models.database import init_db
 from api.routes.recommend import router as recommend_router
 from api.routes.battery_health import router as battery_health_router
 from api.routes.analytics import router as analytics_router
+from api.routes.weather import router as weather_router
+from api.routes.prices import router as prices_router
 
 logger = logging.getLogger(__name__)
 
@@ -56,10 +58,10 @@ app = FastAPI(
     version=settings.app_version,
     lifespan=lifespan,
     description=(
-        "An intelligent EV charging optimization platform that minimizes "
-        "charging cost while maximizing battery health and ensuring the "
-        "vehicle is ready before departure. Uses Linear Programming (PuLP) "
-        "and XGBoost ML to compute optimal hourly charging schedules."
+        "AI-Powered Smart EV Charging Recommendation System. "
+        "Combines Linear Programming (PuLP/CBC), XGBoost ML, live weather data, "
+        "dynamic electricity pricing, and V2G support to compute optimal "
+        "hourly charging schedules that minimize cost and protect battery health."
     ),
     docs_url="/docs",
     redoc_url="/redoc",
@@ -92,6 +94,8 @@ app.add_middleware(
 app.include_router(recommend_router)
 app.include_router(battery_health_router)
 app.include_router(analytics_router)
+app.include_router(weather_router)
+app.include_router(prices_router)
 
 
 # ============================================================
@@ -107,10 +111,12 @@ async def root():
         "status": "running",
         "docs": "/docs",
         "endpoints": {
-            "recommend": "POST /api/recommend",
-            "battery_health": "GET /api/battery-health",
-            "analytics": "GET /api/analytics",
-            "health": "GET /health",
+            "recommend":      "POST /api/recommend",
+            "battery_health": "GET  /api/battery-health",
+            "analytics":      "GET  /api/analytics",
+            "weather":        "GET  /api/weather?city=Mumbai",
+            "prices":         "GET  /api/prices?region=US_CA",
+            "health":         "GET  /health",
         },
     }
 

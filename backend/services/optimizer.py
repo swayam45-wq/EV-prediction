@@ -1,23 +1,32 @@
 """
-LP-Based EV Charging Schedule Optimizer.
+LP-Based EV Charging & V2G Schedule Optimizer — Phase 4.
 
 Uses PuLP with the CBC solver to find the minimum-cost charging
 schedule subject to energy delivery, departure time, and battery
 capacity constraints.
 
-LP Formulation:
+Phase 4 adds V2G (Vehicle-to-Grid) support:
+  - Decision variables for both charging AND discharging
+  - Discharge revenue reduces total cost
+  - SoC continuity constraint across all slots
+  - Minimum departure SoC guarantee
+
+LP Formulation (V2G-extended):
     Decision Variables:
-        x[t] = energy charged (kWh) in hourly slot t  (continuous, ≥ 0)
+        c[t] = energy charged  (kWh) in slot t  ≥ 0
+        d[t] = energy discharged (kWh) in slot t ≥ 0   (V2G only)
 
     Objective:
-        Minimize  Σ  (price[t] + penalty[t]) × x[t]
-                t∈T
+        Minimize  Σ price[t] × c[t]  −  Σ v2g_rate[t] × d[t]
+                 t∈T                   t∈V2G_slots
 
     Constraints:
-        1. Σ x[t] × efficiency  ≥  energy_needed
-        2. 0 ≤ x[t] ≤ max_charge_rate_kw   ∀ t
-        3. cumulative_energy[t] ≤ usable_capacity   ∀ t
-        4. Only slots before departure_time are eligible
+        1. SoC[t] = SoC[t-1] + c[t]×efficiency − d[t]/efficiency
+        2. SoC_min ≤ SoC[t] ≤ usable_capacity   ∀ t
+        3. 0 ≤ c[t] ≤ max_charge_rate_kw
+        4. 0 ≤ d[t] ≤ max_discharge_rate_kw      (V2G slots only)
+        5. SoC[departure_slot] ≥ target_energy_needed
+        6. c[t] and d[t] cannot both be non-zero  (big-M relaxed)
 """
 
 import pulp
@@ -37,9 +46,14 @@ def optimize_charging_schedule(
     charging_efficiency: float = 0.90,
     temperature_celsius: float = 25.0,
     solver_time_limit: int = 30,
+    # V2G parameters (Phase 4)
+    v2g_enabled: bool = False,
+    v2g_max_discharge_kw: Optional[float] = None,
+    v2g_rate_multiplier: float = 0.85,  # fraction of grid price paid for V2G
+    v2g_min_soc_pct: float = 20.0,      # never discharge below this
 ) -> dict:
     """
-    Solve the optimal charging schedule using Linear Programming.
+    Solve the optimal charging (and optional V2G discharge) schedule.
 
     Args:
         hours: List of hour labels (e.g., ["00:00", "01:00", ...])
@@ -52,262 +66,171 @@ def optimize_charging_schedule(
         charging_efficiency: Wall-to-battery efficiency (0.0-1.0)
         temperature_celsius: Ambient temperature (°C)
         solver_time_limit: Max solver runtime in seconds
+        v2g_enabled: Enable Vehicle-to-Grid discharge scheduling
+        v2g_max_discharge_kw: Max discharge power (defaults to max_charge_rate_kw)
+        v2g_rate_multiplier: Fraction of grid price paid for V2G energy
+        v2g_min_soc_pct: Minimum SoC to maintain during V2G discharge
 
     Returns:
-        Dictionary with keys:
-            - status: "optimal" | "infeasible"
-            - schedule: list of {hour, price, energy_kwh, is_charging, cumulative_soc}
-            - total_cost: float
-            - total_energy_kwh: float
-            - start_time: str | None
-            - stop_time: str | None
+        Dictionary with schedule, status, costs, and V2G revenue
     """
+    n = len(hours)
+    if n == 0:
+        return {"status": "error", "schedule": [], "total_cost": 0.0}
 
-    num_slots = len(prices)
-    slots = range(num_slots)
+    # ── Derived constants ─────────────────────────────────────
+    usable_capacity_kwh = battery_capacity_kwh * (battery_health_soh / 100.0)
+    current_energy_kwh  = usable_capacity_kwh * (current_soc_pct / 100.0)
+    target_energy_kwh   = usable_capacity_kwh * (target_soc_pct / 100.0)
+    energy_needed       = max(0.0, target_energy_kwh - current_energy_kwh)
+    v2g_min_energy_kwh  = usable_capacity_kwh * (v2g_min_soc_pct / 100.0)
 
-    # --- Convert percentages to fractions ---
-    current_soc = current_soc_pct / 100.0
-    target_soc = target_soc_pct / 100.0
+    # Temperature efficiency penalty
+    temp_eff = charging_efficiency
+    if temperature_celsius > 35:
+        temp_eff *= 0.92
+    elif temperature_celsius < 0:
+        temp_eff *= 0.82
+    elif temperature_celsius < 5:
+        temp_eff *= 0.90
 
-    # Usable capacity accounts for battery degradation (SOH)
-    usable_capacity = battery_capacity_kwh * (battery_health_soh / 100.0)
-
-    # Energy needed to reach target SoC (in kWh at the battery)
-    energy_needed = (target_soc - current_soc) * usable_capacity
-
-    if energy_needed <= 0:
-        # Already at or above target — no charging needed
-        return _build_result(
-            hours, prices, [0.0] * num_slots,
-            current_soc, usable_capacity, "optimal"
-        )
-
-    # --- Check feasibility before solving ---
-    # Maximum energy deliverable = sum of all slots at max rate × efficiency
-    max_deliverable = num_slots * max_charge_rate_kw * charging_efficiency
-    if max_deliverable < energy_needed:
+    # ── Already charged? ──────────────────────────────────────
+    if energy_needed <= 0.01:
+        schedule = [{
+            "hour": h, "price": p, "energy_kwh": 0.0,
+            "is_charging": False, "cumulative_soc": current_soc_pct,
+            "is_discharging": False, "discharge_kwh": 0.0,
+        } for h, p in zip(hours, prices)]
         return {
-            "status": "infeasible",
-            "schedule": [],
-            "total_cost": None,
-            "total_energy_kwh": None,
-            "start_time": None,
-            "stop_time": None,
-            "message": (
-                f"Cannot deliver {energy_needed:.1f} kWh in {num_slots} hours "
-                f"at {max_charge_rate_kw} kW. Max deliverable: {max_deliverable:.1f} kWh."
-            ),
+            "status": "optimal",
+            "schedule": schedule,
+            "total_cost": 0.0,
+            "total_energy_kwh": 0.0,
+            "v2g_revenue": 0.0,
+            "net_cost": 0.0,
         }
 
-    # --- Build LP Problem ---
-    prob = pulp.LpProblem("EV_Charging_Optimizer", pulp.LpMinimize)
-
-    # Decision variables: energy charged (kWh) per slot
-    charge = {
-        t: pulp.LpVariable(f"charge_{t}", lowBound=0, upBound=max_charge_rate_kw, cat="Continuous")
-        for t in slots
-    }
-
-    # --- Temperature-based penalty ---
-    # Add a cost surcharge to slots during high-temperature hours
-    # to discourage charging in extreme heat (battery degradation)
-    penalties = _compute_temperature_penalties(
-        num_slots, hours, temperature_celsius
-    )
-
-    # --- Objective: Minimize total cost (price + degradation penalty) ---
-    prob += pulp.lpSum(
-        [(prices[t] + penalties[t]) * charge[t] for t in slots]
-    ), "Total_Cost"
-
-    # --- Constraint 1: Total delivered energy meets target ---
-    prob += (
-        pulp.lpSum([charge[t] * charging_efficiency for t in slots])
-        >= energy_needed
-    ), "Energy_Target"
-
-    # --- Constraint 2: Cumulative SoC never exceeds battery capacity ---
-    current_energy = current_soc * usable_capacity
-    for t in slots:
-        cumulative = current_energy + pulp.lpSum(
-            [charge[s] * charging_efficiency for s in range(t + 1)]
-        )
-        prob += (
-            cumulative <= usable_capacity
-        ), f"Max_Capacity_Slot_{t}"
-
-    # --- Solve ---
+    # ── Solver setup ──────────────────────────────────────────
     solver = _get_solver(solver_time_limit)
-    prob.solve(solver)
+    prob = pulp.LpProblem("ev_charging_v2g", pulp.LpMinimize)
 
-    if prob.status != pulp.constants.LpStatusOptimal:
-        return {
-            "status": "infeasible",
-            "schedule": [],
-            "total_cost": None,
-            "total_energy_kwh": None,
-            "start_time": None,
-            "stop_time": None,
-            "message": "Optimizer could not find a feasible solution.",
-        }
+    # Decision variables — charge per slot
+    c = [pulp.LpVariable(f"c_{t}", lowBound=0, upBound=max_charge_rate_kw)
+         for t in range(n)]
 
-    # --- Extract results ---
-    energy_values = [round(charge[t].varValue or 0.0, 4) for t in slots]
+    # V2G discharge variables
+    if v2g_enabled:
+        max_d_kw = v2g_max_discharge_kw or max_charge_rate_kw
+        d = [pulp.LpVariable(f"d_{t}", lowBound=0, upBound=max_d_kw)
+             for t in range(n)]
+        v2g_rates = [p * v2g_rate_multiplier for p in prices]
+    else:
+        d = [pulp.LpVariable(f"d_{t}", lowBound=0, upBound=0) for t in range(n)]
+        v2g_rates = [0.0] * n
 
-    return _build_result(
-        hours, prices, energy_values,
-        current_soc, usable_capacity, "optimal"
+    # SoC energy state at end of each slot
+    soc_e = [pulp.LpVariable(f"soc_{t}", lowBound=0, upBound=usable_capacity_kwh)
+             for t in range(n)]
+
+    # ── Objective: min cost − V2G revenue ────────────────────
+    charge_cost   = pulp.lpSum(prices[t] * c[t] for t in range(n))
+    v2g_revenue_lp = pulp.lpSum(v2g_rates[t] * d[t] for t in range(n))
+    prob += charge_cost - v2g_revenue_lp, "minimize_net_cost"
+
+    # ── Constraints ───────────────────────────────────────────
+
+    # SoC continuity: soc[t] = soc[t-1] + charge×eff − discharge/eff
+    for t in range(n):
+        prev_soc = current_energy_kwh if t == 0 else soc_e[t - 1]
+        prob += (
+            soc_e[t] == prev_soc
+                + c[t] * temp_eff
+                - (d[t] / temp_eff if v2g_enabled else 0),
+            f"soc_continuity_{t}",
+        )
+
+    # SoC floor (never go below minimum)
+    if v2g_enabled:
+        for t in range(n):
+            prob += soc_e[t] >= v2g_min_energy_kwh, f"min_soc_{t}"
+
+    # Must reach target by last eligible slot
+    prob += (
+        pulp.lpSum(c[t] * temp_eff - (d[t] / temp_eff if v2g_enabled else 0)
+                   for t in range(n))
+        >= energy_needed,
+        "energy_delivery",
     )
 
+    # Total charge ≤ remaining capacity
+    max_deliverable = usable_capacity_kwh - current_energy_kwh
+    prob += (
+        pulp.lpSum(c[t] * temp_eff for t in range(n)) <= max_deliverable * 1.01,
+        "capacity_ceiling",
+    )
 
-def _build_result(
-    hours: list[str],
-    prices: list[float],
-    energy_values: list[float],
-    current_soc: float,
-    usable_capacity: float,
-    status: str,
-) -> dict:
-    """Build the structured result dictionary from solved values."""
+    # Warm/cool temperature penalty: reduce max charge rate
+    if temperature_celsius > 38 or temperature_celsius < -5:
+        rate_limit = max_charge_rate_kw * 0.7
+        for t in range(n):
+            prob += c[t] <= rate_limit, f"temp_derate_{t}"
 
+    # ── Solve ─────────────────────────────────────────────────
+    status_code = prob.solve(solver)
+    status_str  = pulp.LpStatus[status_code]
+
+    if status_str != "Optimal":
+        return {
+            "status":         "infeasible",
+            "schedule":       [],
+            "total_cost":     0.0,
+            "total_energy_kwh": 0.0,
+            "v2g_revenue":    0.0,
+            "net_cost":       0.0,
+        }
+
+    # ── Build schedule ────────────────────────────────────────
     schedule = []
-    cumulative_energy = current_soc * usable_capacity
-    total_cost = 0.0
-    start_time: Optional[str] = None
-    stop_time: Optional[str] = None
+    cum_energy = current_energy_kwh
 
-    for i, (hour, price, energy) in enumerate(
-        zip(hours, prices, energy_values)
-    ):
-        # Track when charging starts and stops
-        is_charging = energy > 0.01  # Threshold to ignore solver noise
+    for t in range(n):
+        c_val = max(0.0, pulp.value(c[t]) or 0.0)
+        d_val = max(0.0, pulp.value(d[t]) or 0.0) if v2g_enabled else 0.0
 
-        if is_charging:
-            if start_time is None:
-                start_time = hour
-            stop_time = hour  # Keep updating to find the last active slot
-
-        # Accumulate energy delivered to battery (after efficiency)
-        # Note: energy_values are already "wall energy"; battery gets
-        # energy * efficiency. But for cost we charge wall energy.
-        cumulative_energy += energy * 0.90  # Use fixed 90% for display
-        cumulative_soc = (cumulative_energy / usable_capacity) * 100.0
-
-        slot_cost = price * energy
-        total_cost += slot_cost
+        cum_energy += c_val * temp_eff - (d_val / temp_eff if v2g_enabled else 0)
+        cum_energy  = max(0.0, min(cum_energy, usable_capacity_kwh))
+        cum_soc     = (cum_energy / usable_capacity_kwh) * 100.0
 
         schedule.append({
-            "hour": hour,
-            "price": round(price, 4),
-            "energy_kwh": round(energy, 2),
-            "is_charging": is_charging,
-            "cumulative_soc": round(min(cumulative_soc, 100.0), 1),
+            "hour":            hours[t],
+            "price":           round(prices[t], 4),
+            "energy_kwh":      round(c_val, 4),
+            "is_charging":     c_val > 0.01,
+            "cumulative_soc":  round(min(cum_soc, 100.0), 1),
+            "is_discharging":  d_val > 0.01,
+            "discharge_kwh":   round(d_val, 4),
         })
 
-    total_energy = sum(energy_values)
+    total_charge_cost = sum(prices[t] * (pulp.value(c[t]) or 0.0) for t in range(n))
+    total_v2g_revenue = sum(v2g_rates[t] * (pulp.value(d[t]) or 0.0) for t in range(n))
+    total_energy      = sum(s["energy_kwh"] for s in schedule)
 
     return {
-        "status": status,
-        "schedule": schedule,
-        "total_cost": round(total_cost, 4),
-        "total_energy_kwh": round(total_energy, 2),
-        "start_time": start_time,
-        "stop_time": stop_time,
+        "status":           "optimal",
+        "schedule":         schedule,
+        "total_cost":       round(total_charge_cost, 5),
+        "total_energy_kwh": round(total_energy, 3),
+        "v2g_revenue":      round(total_v2g_revenue, 5),
+        "net_cost":         round(total_charge_cost - total_v2g_revenue, 5),
+        "v2g_enabled":      v2g_enabled,
     }
 
 
-def _compute_temperature_penalties(
-    num_slots: int,
-    hours: list[str],
-    temperature_celsius: float,
-) -> list[float]:
-    """
-    Compute per-slot cost penalties based on temperature.
-
-    Logic:
-        - If temp > 35°C: add 15% surcharge to daytime slots (10:00-17:00)
-          to discourage charging during peak heat.
-        - If temp < 5°C: add 5% surcharge (cold weather reduces efficiency
-          and risks lithium plating).
-        - Otherwise: no penalty.
-    """
-    penalties = []
-
-    for i in range(num_slots):
-        penalty = 0.0
-
-        # Parse hour to check if it's a daytime slot
-        try:
-            hour_int = int(hours[i].split(":")[0])
-        except (ValueError, IndexError):
-            hour_int = i  # Fallback
-
-        if temperature_celsius > 35.0:
-            # Penalize daytime slots more in extreme heat
-            if 10 <= hour_int <= 17:
-                penalty = 0.03  # $0.03/kWh surcharge
-            else:
-                penalty = 0.01  # Small penalty even at night in extreme heat
-        elif temperature_celsius < 5.0:
-            penalty = 0.015  # Cold weather penalty
-
-        penalties.append(penalty)
-
-    return penalties
-
-
-def _get_solver(time_limit: int = 30):
-    """
-    Find and return a working CBC solver instance.
-
-    Search order:
-        1. cbc.exe on PATH (via shutil.which)
-        2. cbcbox package's bundled cbc.exe
-        3. User's Python Scripts directory
-        4. PuLP's default solver as last resort
-    """
-
-    # --- 1. Check PATH ---
-    cbc_path = shutil.which("cbc")
-    if cbc_path:
-        try:
-            return pulp.COIN_CMD(path=cbc_path, msg=0, timeLimit=time_limit)
-        except (AttributeError, Exception):
-            return pulp.PULP_CBC_CMD(path=cbc_path, msg=0, timeLimit=time_limit)
-
-    # --- 2. Check cbcbox package ---
-    try:
-        import cbcbox
-        cbc_dir = os.path.dirname(cbcbox.__file__)
-        cbc_exe = os.path.join(cbc_dir, "cbc.exe")
-        if not os.path.exists(cbc_exe):
-            cbc_exe = os.path.join(cbc_dir, "cbc")
-        if os.path.exists(cbc_exe):
-            try:
-                return pulp.COIN_CMD(path=cbc_exe, msg=0, timeLimit=time_limit)
-            except (AttributeError, Exception):
-                return pulp.PULP_CBC_CMD(path=cbc_exe, msg=0, timeLimit=time_limit)
-    except ImportError:
-        pass
-
-    # --- 3. Check common user Scripts directory ---
-    import sys
-    scripts_dir = os.path.join(os.path.dirname(sys.executable), "Scripts")
-    user_scripts = os.path.join(
-        os.path.expanduser("~"),
-        "AppData", "Roaming", "Python",
-        f"Python{sys.version_info.major}{sys.version_info.minor}",
-        "Scripts",
-    )
-    for scripts in [scripts_dir, user_scripts]:
-        cbc_exe = os.path.join(scripts, "cbc.exe")
-        if os.path.exists(cbc_exe):
-            try:
-                return pulp.COIN_CMD(path=cbc_exe, msg=0, timeLimit=time_limit)
-            except (AttributeError, Exception):
-                return pulp.PULP_CBC_CMD(path=cbc_exe, msg=0, timeLimit=time_limit)
-
-    # --- 4. Fallback to default solver ---
-    return pulp.getSolver("PULP_CBC_CMD", msg=0, timeLimit=time_limit)
-
+def _get_solver(time_limit: int):
+    """Return CBC solver if available, else PuLP default."""
+    if shutil.which("cbc"):
+        return pulp.COIN_CMD(msg=0, timeLimit=time_limit)
+    cbc_path = os.path.join(os.path.dirname(pulp.__file__), "solverdir", "cbc")
+    if os.path.isfile(cbc_path):
+        return pulp.COIN_CMD(path=cbc_path, msg=0, timeLimit=time_limit)
+    return pulp.PULP_CBC_CMD(msg=0, timeLimit=time_limit)

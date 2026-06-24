@@ -179,5 +179,9 @@ class TestOptimizerCostMinimization:
         )
 
         assert result["status"] == "optimal"
-        assert result["start_time"] is not None
-        assert result["stop_time"] is not None
+        # Phase 4: start/stop are derived from schedule in the route layer
+        active = [s for s in result["schedule"] if s["is_charging"]]
+        assert len(active) > 0, "At least one charging slot expected"
+        # Cheapest hours are 02:00 and 03:00 — optimizer should pick those
+        active_hours = [s["hour"] for s in active]
+        assert "02:00" in active_hours or "03:00" in active_hours
