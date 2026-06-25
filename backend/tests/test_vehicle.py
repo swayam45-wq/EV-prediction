@@ -38,7 +38,7 @@ class TestVehicleEndpoints:
         assert data["source"] == "demo"
         assert data["connected"] is True
         assert data["vehicle_id"] == "DEMO-001"
-        assert data["make"] == "ChargeMind"
+        assert data["make"] == "VoltWise"
         assert data["battery_level_pct"] > 0
         assert data["battery_capacity_kwh"] == 75.0
         assert data["error"] is None

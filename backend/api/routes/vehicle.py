@@ -198,7 +198,7 @@ async def list_providers():
                 "name":         "Demo Mode",
                 "description":  "Simulated 75 kWh EV — no credentials required",
                 "configured":   True,
-                "brands":       ["ChargeMind Demo EV"],
+                "brands":       ["VoltWise Demo EV"],
                 "docs":         None,
             },
             {

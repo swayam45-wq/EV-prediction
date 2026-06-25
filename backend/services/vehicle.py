@@ -109,7 +109,7 @@ def get_demo_vehicle_status() -> dict:
         source="demo",
         connected=True,
         vehicle_id="DEMO-001",
-        make="ChargeMind",
+        make="VoltWise",
         model="EV Demo · 75 kWh",
         year=2024,
         battery_level_pct=soc,

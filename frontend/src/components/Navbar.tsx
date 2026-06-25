@@ -29,7 +29,7 @@ export default function Sidebar() {
             <EV_ICON />
           </div>
           <div>
-            <div className="brand-name">ChargeMind</div>
+            <div className="brand-name">VoltWise</div>
             <div className="brand-tagline">EV Intelligence</div>
           </div>
         </div>
@@ -97,7 +97,7 @@ export default function Sidebar() {
         fontSize: 11,
         color: 'var(--text-tertiary)',
       }}>
-        <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 2 }}>ChargeMind v2.0</div>
+        <div style={{ fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 2 }}>VoltWise v2.0</div>
         <div>Backend · FastAPI + XGBoost</div>
       </div>
     </aside>
