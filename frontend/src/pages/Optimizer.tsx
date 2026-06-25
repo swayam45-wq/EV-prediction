@@ -1,12 +1,16 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement,
   LineElement, PointElement, Title, Tooltip, Legend, Filler,
 } from 'chart.js'
 import { Bar } from 'react-chartjs-2'
-import { Zap, Clock, TrendingDown, Shield, ChevronDown, ChevronUp, Loader2, CheckCircle, AlertCircle } from 'lucide-react'
-import { getRecommendation } from '../api'
-import type { ChargingRequest, ChargingRecommendation, ElectricityPrice } from '../types'
+import {
+  Zap, Clock, TrendingDown, Shield, ChevronDown, ChevronUp,
+  Loader2, CheckCircle, AlertCircle, Car, RefreshCw, Globe,
+  Link2, Unlink,
+} from 'lucide-react'
+import { getRecommendation, getVehicleStatus, getPrices, connectVehicle, disconnectVehicle } from '../api'
+import type { ChargingRequest, ChargingRecommendation, ElectricityPrice, VehicleStatus } from '../types'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler)
 
@@ -49,6 +53,8 @@ function WearBar({ label, value }: { label: string; value: number }) {
   )
 }
 
+const REGIONS = ['US_CA', 'US_TX', 'UK', 'DE', 'IN', 'DEFAULT']
+
 export default function Optimizer() {
   const [form, setForm] = useState({
     current_soc: 30, target_soc: 80,
@@ -57,6 +63,11 @@ export default function Optimizer() {
     temperature_celsius: 22, weather_condition: 'clear',
     charging_efficiency: 0.90,
   })
+  const [prices, setPrices] = useState<ElectricityPrice[]>(DEFAULT_PRICES)
+  const [region, setRegion] = useState('US_CA')
+  const [vehicle, setVehicle] = useState<VehicleStatus | null>(null)
+  const [vehicleLoading, setVehicleLoading] = useState(false)
+  const [pricesLoading, setPricesLoading] = useState(false)
   const [result, setResult] = useState<ChargingRecommendation | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -64,11 +75,73 @@ export default function Optimizer() {
 
   const set = (k: string, v: number | string) => setForm(f => ({ ...f, [k]: v }))
 
+  // ── Connect & Disconnect Handlers ───────────────────────────
+  const handleConnect = async () => {
+    try {
+      const res = await connectVehicle()
+      if (res.status === 'ready' && res.authorization_url) {
+        window.open(res.authorization_url, '_blank')
+      } else if (res.status === 'not_configured') {
+        alert(res.message || 'Smartcar API is not configured on the backend. Add SMARTCAR_CLIENT_ID to .env to connect a real vehicle.')
+      }
+    } catch (err) {
+      alert('Failed to initiate vehicle connection.')
+    }
+  }
+
+  const handleDisconnect = async () => {
+    try {
+      await disconnectVehicle()
+      await fetchVehicle()
+    } catch (err) {
+      alert('Failed to disconnect vehicle.')
+    }
+  }
+
+  // ── Auto-fetch vehicle status on mount ──────────────────────
+  const fetchVehicle = useCallback(async () => {
+    setVehicleLoading(true)
+    try {
+      const v = await getVehicleStatus()
+      setVehicle(v)
+      // Auto-fill form from vehicle data
+      setForm(f => ({
+        ...f,
+        current_soc:          v.battery_level_pct       ?? f.current_soc,
+        battery_capacity_kwh: v.battery_capacity_kwh    ?? f.battery_capacity_kwh,
+        battery_health_soh:   v.battery_health_soh      ?? f.battery_health_soh,
+        max_charge_rate_kw:   v.charge_rate_kw && v.charge_rate_kw > 0
+                                ? v.charge_rate_kw
+                                : f.max_charge_rate_kw,
+      }))
+    } catch {
+      // Vehicle not available — keep manual defaults
+    } finally {
+      setVehicleLoading(false)
+    }
+  }, [])
+
+  // ── Fetch live prices when region changes ───────────────────
+  const fetchPrices = useCallback(async (r: string) => {
+    setPricesLoading(true)
+    try {
+      const p = await getPrices(r)
+      setPrices(p.prices)
+    } catch {
+      setPrices(DEFAULT_PRICES)
+    } finally {
+      setPricesLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { fetchVehicle() }, [fetchVehicle])
+  useEffect(() => { fetchPrices(region) }, [region, fetchPrices])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true); setError(null); setResult(null)
     try {
-      const payload: ChargingRequest = { ...form, electricity_prices: DEFAULT_PRICES }
+      const payload: ChargingRequest = { ...form, electricity_prices: prices }
       setResult(await getRecommendation(payload))
     } catch {
       setError('Could not reach backend. Ensure the FastAPI server is running on port 8000.')
@@ -94,7 +167,7 @@ export default function Optimizer() {
       },
       {
         label: 'Price ($/kWh)',
-        data: DEFAULT_PRICES.map(p => p.price),
+        data: prices.map(p => p.price),
         type: 'line' as const,
         borderColor: 'rgba(245,158,11,0.6)',
         backgroundColor: 'rgba(245,158,11,0.05)',
@@ -160,11 +233,112 @@ export default function Optimizer() {
 
           {/* ── INPUT PANEL ─────────────────────────────────── */}
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            {/* Vehicle status banner */}
+            {vehicle && (
+              <div className="card fade-up">
+                <div className="card-body" style={{ padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div className="icon-box icon-box-blue"><Car size={14} /></div>
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {vehicle.make || 'Vehicle'} {vehicle.model || ''}
+                        </div>
+                        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                          {vehicle.source === 'demo' ? 'Demo Mode' : `Live · ${vehicle.source}`}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div className={`pill pill-${vehicle.charge_state === 'CHARGING' ? 'blue' : vehicle.is_plugged_in ? 'green' : 'yellow'}`}>
+                        <div className="pill-dot" />
+                        {vehicle.charge_state === 'CHARGING' ? 'Charging' : vehicle.is_plugged_in ? 'Plugged in' : 'Unplugged'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={fetchVehicle}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 4 }}
+                        title="Refresh vehicle data"
+                      >
+                        {vehicleLoading
+                          ? <Loader2 size={13} style={{ animation: 'spin 0.7s linear infinite' }} />
+                          : <RefreshCw size={13} />
+                        }
+                      </button>
+                    </div>
+                  </div>
+                  {vehicle.battery_level_pct !== null && (
+                    <div style={{ marginTop: 10 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
+                        <span>Battery</span>
+                        <span style={{ color: 'var(--success)', fontWeight: 700 }}>{vehicle.battery_level_pct?.toFixed(0)}%
+                          {vehicle.battery_range_km && <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}> · {vehicle.battery_range_km} km range</span>}
+                        </span>
+                      </div>
+                      <div className="progress-wrap">
+                        <div className="progress-fill" style={{
+                          width: `${vehicle.battery_level_pct}%`,
+                          background: (vehicle.battery_level_pct ?? 0) > 50 ? 'var(--success)' : (vehicle.battery_level_pct ?? 0) > 20 ? 'var(--warning)' : 'var(--danger)'
+                        }} />
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+                        <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                          ✓ Form auto-filled from vehicle data
+                        </div>
+                        {vehicle.source === 'demo' ? (
+                          <button
+                            type="button"
+                            onClick={handleConnect}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: '#3b82f6',
+                              fontSize: 10,
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: 0,
+                            }}
+                          >
+                            <Link2 size={11} /> Connect Live EV
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleDisconnect}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--danger)',
+                              fontSize: 10,
+                              fontWeight: 600,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 4,
+                              padding: 0,
+                            }}
+                          >
+                            <Unlink size={11} /> Disconnect
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Battery section */}
             <div className="card">
               <div className="card-header">
                 <span className="card-title"><Zap size={14} /> Vehicle Parameters</span>
+                {vehicleLoading && <Loader2 size={12} color="var(--text-tertiary)" style={{ animation: 'spin 0.7s linear infinite' }} />}
               </div>
+
               <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
 
                 {/* SoC range visual */}
@@ -252,17 +426,29 @@ export default function Optimizer() {
 
             {/* Prices toggle */}
             <div className="card">
-              <button type="button" className="card-header"
-                style={{ width: '100%', cursor: 'pointer', background: 'none', border: 'none', color: 'inherit' }}
-                onClick={() => setShowPrices(v => !v)}>
-                <span className="card-title">Electricity Prices</span>
-                {showPrices ? <ChevronUp size={14} color="var(--text-tertiary)" /> : <ChevronDown size={14} color="var(--text-tertiary)" />}
-              </button>
+              <div className="card-header">
+                <button type="button"
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', display: 'flex', alignItems: 'center', gap: 8 }}
+                  onClick={() => setShowPrices(v => !v)}>
+                  <Globe size={14} color="var(--text-tertiary)" />
+                  <span className="card-title">Electricity Prices</span>
+                  {pricesLoading && <Loader2 size={11} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--text-tertiary)' }} />}
+                  {showPrices ? <ChevronUp size={14} color="var(--text-tertiary)" /> : <ChevronDown size={14} color="var(--text-tertiary)" />}
+                </button>
+                <select
+                  className="form-select"
+                  value={region}
+                  onChange={e => setRegion(e.target.value)}
+                  style={{ width: 90, height: 28, fontSize: 11 }}
+                >
+                  {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
               {showPrices && (
                 <div className="card-body">
                   <table style={{ width: '100%' }}>
                     <tbody>
-                      {DEFAULT_PRICES.map((p, i) => (
+                      {prices.map((p, i) => (
                         <tr key={i}>
                           <td className="mono" style={{ color: 'var(--text-tertiary)', padding: '2px 0', fontSize: 12 }}>{p.hour}</td>
                           <td style={{ textAlign: 'right', padding: '2px 0' }}>

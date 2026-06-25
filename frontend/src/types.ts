@@ -137,3 +137,23 @@ export interface PricesResponse {
   note: string;
   supported_regions: string[];
 }
+
+export interface VehicleStatus {
+  source: string;
+  connected: boolean;
+  vehicle_id: string | null;
+  make: string | null;
+  model: string | null;
+  year: number | null;
+  battery_level_pct: number | null;
+  battery_range_km: number | null;
+  battery_capacity_kwh: number | null;
+  is_plugged_in: boolean | null;
+  charge_state: 'CHARGING' | 'FULLY_CHARGED' | 'NOT_CHARGING' | null;
+  charge_rate_kw: number | null;
+  minutes_to_full: number | null;
+  battery_health_soh: number | null;
+  error: string | null;
+  fetched_at: string;
+}
+

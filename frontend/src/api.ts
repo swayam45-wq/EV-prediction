@@ -2,7 +2,7 @@ import axios from 'axios'
 import type {
   ChargingRequest, ChargingRecommendation,
   BatteryHealthResponse, AnalyticsResponse,
-  WeatherResponse, PricesResponse,
+  WeatherResponse, PricesResponse, VehicleStatus,
 } from './types'
 
 const api = axios.create({
@@ -30,6 +30,22 @@ export const getWeather = (params?: {
 /** Fetch 24h electricity price schedule for a given region. */
 export const getPrices = (region = 'US_CA', source = 'auto'): Promise<PricesResponse> =>
   api.get<PricesResponse>('/api/prices', { params: { region, source } }).then(r => r.data)
+
+export const getVehicleStatus = (provider?: string): Promise<VehicleStatus> =>
+  api.get<VehicleStatus>('/api/vehicle/status', { params: { provider } }).then(r => r.data)
+
+export const connectVehicle = (): Promise<{
+  status: string;
+  authorization_url?: string;
+  message?: string;
+  docs_url?: string;
+  demo_url?: string;
+}> => api.get('/api/vehicle/connect').then(r => r.data)
+
+export const disconnectVehicle = (): Promise<{
+  status: string;
+  message: string;
+}> => api.delete('/api/vehicle/disconnect').then(r => r.data)
 
 export const getHealth = () =>
   api.get('/health').then(r => r.data)

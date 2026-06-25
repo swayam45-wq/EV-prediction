@@ -48,6 +48,16 @@ class Settings(BaseSettings):
     electricity_price_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
 
+    # --- Vehicle APIs (Phase 4b) ---
+    # Smartcar — get free credentials at https://developer.smartcar.com
+    smartcar_client_id: Optional[str] = None
+    smartcar_client_secret: Optional[str] = None
+    smartcar_redirect_uri: str = "http://localhost:8000/api/vehicle/callback"
+
+    # Tesla Fleet API — register at https://developer.tesla.com
+    tesla_client_id: Optional[str] = None
+    tesla_client_secret: Optional[str] = None
+
 
 # Singleton instance — import this throughout the app
 settings = Settings()

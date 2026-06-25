@@ -9,7 +9,7 @@ A full-stack intelligent EV charging platform combining **Linear Programming opt
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0-blue?logo=typescript)](https://typescriptlang.org)
 [![XGBoost](https://img.shields.io/badge/XGBoost-R²=0.993-orange)](https://xgboost.readthedocs.io)
-[![Tests](https://img.shields.io/badge/Tests-55%20passing-brightgreen)](#testing)
+[![Tests](https://img.shields.io/badge/Tests-62%20passing-brightgreen)](#testing)
 
 ---
 
@@ -23,13 +23,14 @@ A full-stack intelligent EV charging platform combining **Linear Programming opt
 | XGBoost Wear Prediction | scikit-learn + XGBoost | 2 | ✅ Done |
 | Async SQLite Database | SQLAlchemy + aiosqlite | 2 | ✅ Done |
 | DB Migrations | Alembic | 2 | ✅ Done |
-| Full Test Suite (55 tests) | pytest + pytest-asyncio | 2 | ✅ Done |
+| Full Test Suite (62 tests) | pytest + pytest-asyncio | 2 | ✅ Done |
 | React Dashboard (4 pages) | Vite + TypeScript + Tailwind | 3 | ✅ Done |
 | Automotive UI Redesign | Custom CSS design system | 3 | ✅ Done |
-| Live Weather API | OpenWeatherMap | 4 | 🔜 Planned |
-| Real-time Electricity Pricing | EIA / ENTSOE API | 4 | 🔜 Planned |
-| LLM-powered Explanations | OpenAI GPT-4 | 4 | 🔜 Planned |
-| V2G (Vehicle-to-Grid) Support | Custom | 4 | 🔜 Planned |
+| Live Weather API | OpenWeatherMap | 4 | ✅ Done |
+| Real-time Electricity Pricing | EIA / 5 Regional TOU Profiles | 4 | ✅ Done |
+| Enhanced AI Explanations | Heuristic + LLM ready | 4 | ✅ Done |
+| V2G (Vehicle-to-Grid) Support | Pure cost minimization | 4 | ✅ Done |
+| Vehicle API Connection | Smartcar + Tesla + Demo fallback | 4b | ✅ Done |
 
 ---
 
@@ -94,13 +95,14 @@ EV-predict/
 │   │   ├── schemas.py            # Pydantic request/response models
 │   │   └── database.py           # SQLAlchemy async ORM models
 │   ├── alembic/                  # DB migration scripts
-│   ├── tests/                    # 55 passing tests
+│   ├── tests/                    # 62 passing tests
 │   │   ├── conftest.py           # In-memory SQLite fixtures
 │   │   ├── test_api.py           # Endpoint integration tests
 │   │   ├── test_optimizer.py     # LP solver unit tests
 │   │   ├── test_degradation.py   # Heuristic model tests
 │   │   ├── test_ml_predict.py    # XGBoost inference tests
-│   │   └── test_database.py      # DB CRUD + endpoint tests
+│   │   ├── test_database.py      # DB CRUD + endpoint tests
+│   │   └── test_vehicle.py       # Vehicle integration tests
 │   ├── main.py                   # FastAPI app + lifespan DB init
 │   ├── config.py                 # Pydantic settings (v2.0.0)
 │   └── requirements.txt
@@ -175,6 +177,10 @@ Trained on 15,000 physics-informed synthetic charging sessions:
 | `POST` | `/api/recommend` | Optimize charging schedule |
 | `GET` | `/api/battery-health` | SoH, wear history, tips |
 | `GET` | `/api/analytics` | Session trends, savings, patterns |
+| `GET` | `/api/vehicle/status` | Real-time vehicle battery & charge status |
+| `GET` | `/api/vehicle/connect` | Start Smartcar OAuth authentication |
+| `DELETE` | `/api/vehicle/disconnect` | Disconnect vehicle and revert to demo |
+| `GET` | `/api/vehicle/providers` | List supported vehicle telemetry providers |
 
 ---
 
@@ -183,10 +189,10 @@ Trained on 15,000 physics-informed synthetic charging sessions:
 ```bash
 cd backend
 python -m pytest tests/ -v
-# Result: 55 passed, 0 failed
+# Result: 62 passed, 0 failed
 ```
 
-Coverage: API endpoints, LP optimizer, heuristic model, XGBoost inference, DB CRUD, analytics endpoints.
+Coverage: API endpoints, LP optimizer, heuristic model, XGBoost inference, DB CRUD, analytics, weather/price services, and vehicle OAuth telemetry.
 
 ---
 
