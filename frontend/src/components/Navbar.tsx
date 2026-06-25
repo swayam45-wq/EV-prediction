@@ -4,14 +4,6 @@ import {
   Settings, BellRing, Wifi
 } from 'lucide-react'
 
-const EV_ICON = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M5 17H3a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v9a2 2 0 0 1-2 2h-1" />
-    <circle cx="7" cy="17" r="2" /><circle cx="17" cy="17" r="2" />
-    <path d="M9 11V6" /><path d="M12 11V6" /><path d="M9 8.5h3" />
-  </svg>
-)
-
 const navItems = [
   { to: '/',          label: 'Dashboard',   icon: LayoutDashboard },
   { to: '/optimizer', label: 'Optimizer',   icon: Zap },
@@ -25,9 +17,7 @@ export default function Sidebar() {
       {/* Brand */}
       <div className="brand">
         <div className="brand-logo">
-          <div className="brand-icon">
-            <EV_ICON />
-          </div>
+          <img src="/logo.png" alt="VoltWise Logo" style={{ width: 32, height: 32, borderRadius: 8, objectFit: 'cover' }} />
           <div>
             <div className="brand-name">VoltWise</div>
             <div className="brand-tagline">EV Intelligence</div>
