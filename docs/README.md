@@ -10,10 +10,13 @@ Welcome to the project documentation. This folder contains everything you need t
 | [02_architecture.md](./02_architecture.md) | System architecture, data flow, and component diagram |
 | [03_optimization_engine.md](./03_optimization_engine.md) | Deep dive into the LP optimizer — math, constraints, and how it works |
 | [04_battery_degradation_model.md](./04_battery_degradation_model.md) | Battery wear scoring — the science and the code |
+| [04b_ml_model_phase2.md](./04b_ml_model_phase2.md) | ML wear prediction pipeline (XGBoost vs. RandomForest) |
 | [05_api_reference.md](./05_api_reference.md) | Complete API documentation with request/response examples |
-| [06_setup_and_installation.md](./06_setup_and_installation.md) | Step-by-step guide to install and run locally |
-| [07_testing_guide.md](./07_testing_guide.md) | How to run tests, what each test covers |
-| [08_roadmap.md](./08_roadmap.md) | Future phases — ML, frontend, advanced features |
+| [05b_setup_guide.md](./05b_setup_guide.md) | Detailed installation and environment troubleshooting guide |
+| [06_frontend_phase3.md](./06_frontend_phase3.md) | Guide to React dashboard pages, custom CSS design system, and telemetry views |
+| [06_setup_and_installation.md](./06_setup_and_installation.md) | Quickstart guide to install and run locally |
+| [07_testing_guide.md](./07_testing_guide.md) | How to run tests and what each test covers |
+| [08_roadmap.md](./08_roadmap.md) | Completed and future phases overview |
 
 ## 🚀 Quick Links
 

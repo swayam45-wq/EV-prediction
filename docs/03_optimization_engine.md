@@ -2,41 +2,49 @@
 
 The core intelligence of the application resides in `backend/services/optimizer.py`. We use **Linear Programming (LP)** to solve the charging scheduling problem.
 
-## What is Linear Programming?
+---
 
-Linear programming is a mathematical method for determining a way to achieve the best outcome (such as lowest cost) in a given mathematical model given some list of requirements represented as linear relationships.
+## LP Formulation with Vehicle-to-Grid (V2G)
 
-## Our Formulation
+In Phase 4, the optimization engine was extended from simple charge-scheduling to bidirectional scheduling (V2G), enabling the vehicle to discharge energy back to the grid during peak pricing hours while ensuring the battery is charged by departure time.
 
 ### 1. Decision Variables
-The solver must decide how much energy to put into the battery during each hourly slot.
-*   $x_t$: Energy charged (in kWh) during time slot $t$.
-*   These variables are continuous and bounded: $0 \leq x_t \leq \text{MaxChargeRate}$.
+For each hourly slot $t$ in the charging window $T$:
+- $c_t$: Energy charged (in kWh) during time slot $t$. Bounded: $0 \leq c_t \leq \text{MaxChargeRate}$.
+- $d_t$: Energy discharged (in kWh) during time slot $t$. Bounded: $0 \leq d_t \leq \text{MaxDischargeRate}$ (only defined when V2G is enabled).
 
 ### 2. Objective Function
-Our primary goal is to minimize cost. However, to gently guide the solver away from charging during extreme heat (which degrades the battery), we add a small "penalty" cost to slots during high-temperature hours.
+The objective is to minimize net electricity cost (charging costs minus grid sell-back revenue). To protect the battery, a small penalty is added to charging during high-temperature hours:
 
-*   **Minimize:** $\sum (Price_t + Penalty_t) \times x_t$
+$$\text{Minimize} \sum_{t \in T} \left( (\text{Price}_t + \text{Penalty}_t) \times c_t \right) - \sum_{t \in T} \left( \text{Price}_t \times \gamma \times d_t \right)$$
+
+Where:
+- $\text{Price}_t$: The dynamic TOU electricity price for slot $t$.
+- $\text{Penalty}_t$: A temperature-dependent scaling factor to deter charging in extreme heat.
+- $\gamma$: The V2G buy-back rate multiplier (default: $0.85$, meaning the utility pays 85% of the spot price).
 
 ### 3. Constraints
-The solver must obey the physical realities of the vehicle and the user's schedule:
+The solver must respect physical limits and the user's constraints:
 
-*   **Energy Target Constraint:** The total energy charged, multiplied by the charging efficiency, must equal or exceed the energy needed to reach the target SoC.
-    *   $\sum (x_t \times \text{Efficiency}) \geq \text{EnergyNeeded}$
-*   **Battery Capacity Constraint:** The cumulative energy in the battery at any time slot $t$ cannot exceed the battery's total usable capacity.
-    *   $\text{CurrentEnergy} + \sum_{i=0}^{t} (x_i \times \text{Efficiency}) \leq \text{UsableCapacity}$
-*   **Time Constraint:** The solver is only given variables ($x_t$) for time slots that occur *before* the user's specified departure time.
+- **Net Energy per Slot**: The net change in battery energy during slot $t$ accounts for round-trip efficiency ($\eta$, default $90\%$):
+  $$\Delta E_t = (c_t \times \eta) - \left( \frac{d_t}{\eta} \right)$$
+- **Cumulative Energy Constraint**: The total energy in the battery at any slot $t$ cannot exceed usable capacity:
+  $$0 \leq E_{\text{current}} + \sum_{i=1}^{t} \Delta E_i \leq \text{UsableCapacity}$$
+- **V2G Safety Floor (SoC Floor)**: To prevent draining the vehicle's battery entirely, the state of charge cannot drop below a configurable safety floor (default: $20\%$ SoC) during V2G discharging:
+  $$E_{\text{current}} + \sum_{i=1}^{t} \Delta E_i \geq \text{UsableCapacity} \times \text{MinSoCFloor}$$
+- **Departure Target**: The battery must meet or exceed the target SoC at the departure hour:
+  $$E_{\text{current}} + \sum_{t \in T} \Delta E_t \geq \text{UsableCapacity} \times \text{TargetSoC}$$
 
-## Technology: PuLP and CBC
+---
 
-*   **PuLP:** A Python library used to define LP problems in an intuitive, pythonic way. It acts as an interface.
-*   **CBC (COIN-OR Branch and Cut):** The underlying open-source solver written in C++ that actually performs the mathematical optimization.
+## Solver Technology: PuLP and CBC
 
-## How the Code Works
+- **PuLP**: A python library to model LP problems using native Python expressions.
+- **CBC (COIN-OR Branch and Cut)**: A high-performance, open-source C++ solver compiled and called by PuLP to find the mathematical optimum.
 
-1.  **Preparation:** The function calculates the `energy_needed` based on current SoC, target SoC, battery capacity, and State of Health (SoH).
-2.  **Feasibility Check:** Before running the solver, it quickly checks if it's physically possible to deliver the required energy within the available time given the maximum charge rate.
-3.  **Problem Definition:** It initializes the `pulp.LpProblem` and creates the decision variables (`pulp.LpVariable`).
-4.  **Constraint Addition:** The objective function and constraints are added to the problem using `pulp.lpSum`.
-5.  **Solving:** The `_get_solver` helper function locates the CBC executable and runs the optimization.
-6.  **Extraction:** If the status is optimal, it iterates through the solved variables (`charge[t].varValue`) to build the final schedule.
+## Optimization Pipeline Flow
+
+1. **Feasibility Check**: Before running the solver, a pre-check validates if the required charge can physically be achieved within the timeframe given the `max_charge_rate_kw`.
+2. **Setup Variables**: Continuous LP variables are constructed for each hour. If V2G is enabled, a set of discharge variables is also instantiated.
+3. **Solve**: The model constraints and objective function are fed to CBC.
+4. **Schedule Extraction**: The solver outputs the exact charging/discharging sequence which is then mapped to cost summaries and battery health models.

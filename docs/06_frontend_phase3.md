@@ -1,4 +1,4 @@
-# 06. Frontend Dashboard (Phase 3)
+# 06. Frontend Dashboard (Phase 3 & 4)
 
 ## Tech Stack
 
@@ -42,27 +42,6 @@ Inspired by Tesla, Rivian, and BMW ConnectedDrive:
 --text-tertiary: #4a5060
 ```
 
-### Key Components
-
-| Class | Description |
-|-------|-------------|
-| `.card` | Surface card with border |
-| `.card-header` | Card header with border-bottom |
-| `.stat-tile` | KPI metric tile with hover effect |
-| `.pill` | Status pill (green/yellow/red/blue) |
-| `.form-input` | Dark themed text input |
-| `.form-select` | Dark themed select dropdown |
-| `.btn-primary` | Accent blue filled button |
-| `.btn-secondary` | Ghost button with border |
-| `.data-table` | Striped data table |
-| `.sidebar` | Fixed sidebar nav container |
-| `.progress-wrap` | Thin progress bar |
-| `.icon-box` | Colored icon container |
-| `.mono` | JetBrains Mono numeric text |
-| `.pill-dot` | Animated status dot in pill |
-| `.spinner-lg` | Loading spinner |
-| `.fade-up` | Entry animation |
-
 ---
 
 ## Layout
@@ -98,17 +77,20 @@ The app uses a **sidebar layout** — not a top navbar:
 - **Health tips** from the backend API
 
 ### Optimizer (`/optimizer`)
-- **Left panel (320px)**: Vehicle Parameters form + Environment form + Electricity Prices
-  - Live SoC delta display ("Charge needed: +50%")
-  - Two-track progress bar (current vs target)
-  - Collapsible price table with mini bar charts
+- **Vehicle Telemetry Status Banner**:
+  - Automatically queries `/api/vehicle/status` on component mount.
+  - Dynamically displays vehicle model, connection type (e.g. *Live · smartcar* or *Demo Mode*), battery range, and charge states.
+  - Form parameters (SoC, battery capacity, SOH, max charge rate) are automatically auto-filled from the vehicle state.
+  - Clicking **"Connect Live EV"** redirects the user to the Smartcar OAuth portal.
+  - Clicking **"Disconnect"** clears active tokens and reverts to simulated mode.
+- **Left panel (320px)**:
+  - Vehicle parameters and environmental forms.
+  - Collapsible **Electricity Prices** card with an active **Region Selector dropdown** (`US_CA`, `US_TX`, `UK`, `DE`, `IN`). Changing the region automatically updates the dynamic prices table and charts.
 - **Right panel**: Results area
-  - 4 summary tiles: start time, stop time, energy, savings %
-  - **Chart.js Bar+Line** mixed chart: energy per slot (bars) + price curve (line)
-  - Cost breakdown table with 4 rows (mono font)
-  - XGBoost wear score circle + 3 sub-score progress bars
-  - Numbered explanations list
-  - Battery health advice list
+  - Mixed Chart.js schedule (bars) + dynamic spot prices (line).
+  - Net cost comparison table showing savings percentages.
+  - XGBoost wear ring and sub-score metrics.
+  - Conversational explanations and optimization advice.
 
 ### Battery Health (`/battery`)
 - **240° arc SoH gauge** with color-coded fill (green/amber/red)
@@ -147,21 +129,3 @@ npm run build
 ## API Proxy
 
 `vite.config.ts` proxies all `/api/*` and `/health` requests to `http://localhost:8000` during development, so no CORS issues.
-
-## File Structure
-
-```
-frontend/src/
-├── index.css          # Full design system (tokens, components, layout)
-├── App.tsx            # Root — sidebar + route outlet
-├── main.tsx           # Entry point + BrowserRouter
-├── api.ts             # Axios client (typed, 30s timeout)
-├── types.ts           # TypeScript interfaces matching Pydantic schemas
-├── components/
-│   └── Navbar.tsx     # Sidebar: brand, vehicle card, nav, footer
-└── pages/
-    ├── Home.tsx        # Dashboard
-    ├── Optimizer.tsx   # Charging form + results
-    ├── BatteryHealth.tsx
-    └── Analytics.tsx
-```
