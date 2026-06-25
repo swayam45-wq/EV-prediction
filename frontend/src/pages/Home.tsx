@@ -4,15 +4,15 @@ import {
   Zap, Battery, TrendingDown, Shield, ArrowRight,
   Thermometer, Clock, Activity, AlertTriangle,
 } from 'lucide-react'
-import { getBatteryHealth } from '../api'
-import type { BatteryHealthResponse } from '../types'
+import { getBatteryHealth, getVehicleStatus, getWeather } from '../api'
+import type { BatteryHealthResponse, VehicleStatus, WeatherResponse } from '../types'
 
 /* ── Circular SoC gauge ───────────────────────────────────── */
 function SoCGauge({ pct }: { pct: number }) {
   const r = 54, cx = 64, cy = 64
   const circ = 2 * Math.PI * r
   const filled = (pct / 100) * circ
-  const color = pct > 50 ? '#10b981' : pct > 25 ? '#f59e0b' : '#ef4444'
+  const color = pct > 50 ? '#10b981' : pct > 20 ? '#f59e0b' : '#ef4444'
 
   return (
     <svg width="128" height="128" viewBox="0 0 128 128">
@@ -30,7 +30,7 @@ function SoCGauge({ pct }: { pct: number }) {
       <text x={cx} y={58} textAnchor="middle"
         fill="#f1f3f8" fontSize="22" fontWeight="700"
         fontFamily="Inter, sans-serif" letterSpacing="-0.03em">
-        {pct}%
+        {pct.toFixed(0)}%
       </text>
       <text x={cx} y={74} textAnchor="middle"
         fill="#4a5060" fontSize="9" fontWeight="600"
@@ -59,13 +59,42 @@ function MetricRow({ label, value, unit, color = 'var(--text-primary)' }:
 
 export default function Home() {
   const [health, setHealth] = useState<BatteryHealthResponse | null>(null)
+  const [vehicle, setVehicle] = useState<VehicleStatus | null>(null)
+  const [weather, setWeather] = useState<WeatherResponse | null>(null)
   const [offline, setOffline] = useState(false)
 
   useEffect(() => {
     getBatteryHealth().then(setHealth).catch(() => setOffline(true))
+    getVehicleStatus().then(setVehicle).catch(() => {})
+    getWeather().then(setWeather).catch(() => {})
   }, [])
 
   const s = health?.summary
+  const soc = vehicle?.battery_level_pct ?? 72
+  const capacity = vehicle?.battery_capacity_kwh ?? 75
+  const range = vehicle?.battery_range_km ?? Math.round(soc / 100 * capacity * 6.2)
+  const chargeRate = vehicle?.charge_rate_kw ?? 11.0
+  const isPlugged = vehicle?.is_plugged_in ?? true
+
+  const ambientTemp = weather?.live_data.temperature_celsius ?? 22
+  const weatherCond = weather?.live_data.weather_condition ?? 'Clear'
+  const batteryTemp = weather?.live_data.temperature_celsius
+    ? Math.round(weather.live_data.temperature_celsius + 4)
+    : 27
+
+  // Helper to dynamically show time until 8:00 AM departure
+  const getHoursUntilDeparture = () => {
+    const now = new Date()
+    const currentHour = now.getHours()
+    const currentMin = now.getMinutes()
+    let diffMins = (8 * 60) - (currentHour * 60 + currentMin)
+    if (diffMins < 0) {
+      diffMins += 24 * 60 // schedule next day
+    }
+    const h = Math.floor(diffMins / 60)
+    const m = diffMins % 60
+    return `${h}h ${m}m`
+  }
 
   return (
     <>
@@ -128,23 +157,34 @@ export default function Home() {
         <div className="grid-2 fade-up" style={{ marginBottom: 20 }}>
           {/* Battery gauge card */}
           <div className="card">
-            <div className="card-header">
-              <span className="card-title"><Battery size={14} /> Battery Status</span>
-              <div className="pill pill-green"><div className="pill-dot" />Plugged In</div>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <span className="card-title"><Battery size={14} /> Battery Status</span>
+                <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2, textTransform: 'capitalize' }}>
+                  {vehicle ? `${vehicle.make} ${vehicle.model || ''}`.trim() : 'Loading EV...'}
+                </div>
+              </div>
+              <div className={`pill pill-${isPlugged ? 'green' : 'yellow'}`}>
+                <div className="pill-dot" />
+                {isPlugged ? 'Plugged In' : 'Unplugged'}
+              </div>
             </div>
             <div className="card-body" style={{ display: 'flex', alignItems: 'center', gap: 28 }}>
-              <SoCGauge pct={72} />
+              <SoCGauge pct={soc} />
               <div style={{ flex: 1 }}>
-                <MetricRow label="Current SoC"         value={72}        unit="%" color="var(--success)" />
-                <MetricRow label="Estimated Range"     value="286"       unit=" km" />
-                <MetricRow label="Battery Capacity"    value="75"        unit=" kWh" />
-                <MetricRow label="Charge Rate"         value="11.0"      unit=" kW" />
+                <MetricRow label="Current State of Charge" value={soc.toFixed(0)} unit="%" color={soc > 50 ? 'var(--success)' : soc > 20 ? 'var(--warning)' : 'var(--danger)'} />
+                <MetricRow label="Estimated Range"     value={range.toFixed(0)} unit=" km" />
+                <MetricRow label="Battery Capacity"    value={capacity.toFixed(0)} unit=" kWh" />
+                <MetricRow label="Charge Rate"         value={chargeRate.toFixed(1)} unit=" kW" />
                 <div style={{ paddingTop: 10 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-tertiary)', marginBottom: 4 }}>
-                    <span>Current · 72%</span><span>Full · 100%</span>
+                    <span>Current · {soc.toFixed(0)}%</span><span>Full · 100%</span>
                   </div>
                   <div className="progress-wrap">
-                    <div className="progress-fill" style={{ width: '72%', background: 'var(--success)' }} />
+                    <div className="progress-fill" style={{
+                      width: `${soc}%`,
+                      background: soc > 50 ? 'var(--success)' : soc > 20 ? 'var(--warning)' : 'var(--danger)'
+                    }} />
                   </div>
                 </div>
               </div>
@@ -155,15 +195,15 @@ export default function Home() {
           <div className="card">
             <div className="card-header">
               <span className="card-title"><Activity size={14} /> Charging Conditions</span>
-              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Live</span>
+              <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Live Feed</span>
             </div>
             <div className="card-body">
-              <MetricRow label="Ambient Temperature"  value="22"   unit="°C" />
-              <MetricRow label="Battery Temperature"  value="27"   unit="°C" />
-              <MetricRow label="Weather"              value="Clear"  />
+              <MetricRow label="Ambient Temperature"  value={ambientTemp.toFixed(1)} unit="°C" />
+              <MetricRow label="Battery Temperature"  value={batteryTemp.toFixed(0)} unit="°C" />
+              <MetricRow label="Weather Condition"    value={weatherCond.charAt(0).toUpperCase() + weatherCond.slice(1)} />
               <MetricRow label="Optimal Temp Range"   value="15–35" unit="°C" color="var(--success)" />
-              <MetricRow label="Departure Time"       value="08:00"  />
-              <MetricRow label="Time Until Departure" value="6h 42m" color="var(--accent)" />
+              <MetricRow label="Target Departure"     value="08:00"  />
+              <MetricRow label="Time Until Departure" value={getHoursUntilDeparture()} color="var(--accent)" />
             </div>
           </div>
         </div>

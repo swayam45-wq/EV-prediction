@@ -1,8 +1,11 @@
+import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Zap, Battery, BarChart3,
   Settings, BellRing, Wifi
 } from 'lucide-react'
+import { getVehicleStatus } from '../api'
+import type { VehicleStatus } from '../types'
 
 const navItems = [
   { to: '/',          label: 'Dashboard',   icon: LayoutDashboard },
@@ -12,6 +15,17 @@ const navItems = [
 ]
 
 export default function Sidebar() {
+  const [vehicle, setVehicle] = useState<VehicleStatus | null>(null)
+
+  useEffect(() => {
+    const fetchStatus = () => {
+      getVehicleStatus().then(setVehicle).catch(() => {})
+    }
+    fetchStatus()
+    const interval = setInterval(fetchStatus, 15_000)
+    return () => clearInterval(interval)
+  }, [])
+
   return (
     <aside className="sidebar">
       {/* Brand */}
@@ -27,24 +41,46 @@ export default function Sidebar() {
 
       {/* Vehicle status card */}
       <div className="vehicle-card">
-        <div className="vehicle-model">Demo EV · 75 kWh</div>
-        <div className="vehicle-sub">VIN: WM3DEMO2026</div>
+        <div className="vehicle-model" style={{ textTransform: 'capitalize' }}>
+          {vehicle ? `${vehicle.make} ${vehicle.model || ''}`.trim() : 'Loading EV...'}
+        </div>
+        <div className="vehicle-sub">
+          {vehicle ? (vehicle.source === 'demo' ? 'DEMO MODE' : `LIVE · ${vehicle.source}`) : 'VIN: —'}
+        </div>
         <div className="soc-bar-wrap">
           <div className="soc-label">
             <span>State of Charge</span>
-            <span style={{ color: '#10b981', fontWeight: 700 }}>72%</span>
+            <span style={{
+              color: vehicle && vehicle.battery_level_pct !== null
+                ? (vehicle.battery_level_pct > 50 ? 'var(--success)' : vehicle.battery_level_pct > 20 ? 'var(--warning)' : 'var(--danger)')
+                : 'var(--text-tertiary)',
+              fontWeight: 700
+            }}>
+              {vehicle && vehicle.battery_level_pct !== null ? `${vehicle.battery_level_pct.toFixed(0)}%` : '—'}
+            </span>
           </div>
           <div className="soc-bar">
-            <div className="soc-fill" style={{ width: '72%' }} />
+            <div className="soc-fill" style={{
+              width: vehicle && vehicle.battery_level_pct !== null ? `${vehicle.battery_level_pct}%` : '0%',
+              background: vehicle && vehicle.battery_level_pct !== null
+                ? (vehicle.battery_level_pct > 50 ? 'var(--success)' : vehicle.battery_level_pct > 20 ? 'var(--warning)' : 'var(--danger)')
+                : 'var(--text-tertiary)'
+            }} />
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-          <div className="pill pill-green">
+          <div className={`pill pill-${
+            vehicle
+              ? (vehicle.charge_state === 'CHARGING' ? 'blue' : vehicle.is_plugged_in ? 'green' : 'yellow')
+              : 'yellow'
+          }`}>
             <div className="pill-dot" />
-            Charging
+            {vehicle
+              ? (vehicle.charge_state === 'CHARGING' ? 'Charging' : vehicle.is_plugged_in ? 'Plugged In' : 'Unplugged')
+              : 'Unknown'}
           </div>
           <div className="pill pill-blue" style={{ marginLeft: 'auto', fontSize: 10 }}>
-            <Wifi size={9} /> Live
+            <Wifi size={9} /> {vehicle && vehicle.source !== 'demo' ? 'Live' : 'Demo'}
           </div>
         </div>
       </div>
