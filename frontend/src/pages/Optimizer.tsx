@@ -290,39 +290,34 @@ export default function Optimizer() {
                           <button
                             type="button"
                             onClick={handleConnect}
+                            className="btn btn-secondary"
                             style={{
-                              background: 'none',
-                              border: 'none',
-                              color: '#3b82f6',
-                              fontSize: 10,
-                              fontWeight: 600,
-                              cursor: 'pointer',
+                              fontSize: 11,
+                              padding: '6px 12px',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: 4,
-                              padding: 0,
+                              gap: 6,
                             }}
                           >
-                            <Link2 size={11} /> Connect Live EV
+                            <Link2 size={12} /> Connect your car
                           </button>
                         ) : (
                           <button
                             type="button"
                             onClick={handleDisconnect}
+                            className="btn"
                             style={{
-                              background: 'none',
-                              border: 'none',
+                              background: 'rgba(239, 68, 68, 0.1)',
+                              border: '1px solid rgba(239, 68, 68, 0.2)',
                               color: 'var(--danger)',
-                              fontSize: 10,
-                              fontWeight: 600,
-                              cursor: 'pointer',
+                              fontSize: 11,
+                              padding: '6px 12px',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: 4,
-                              padding: 0,
+                              gap: 6,
                             }}
                           >
-                            <Unlink size={11} /> Disconnect
+                            <Unlink size={12} /> Disconnect
                           </button>
                         )}
                       </div>
