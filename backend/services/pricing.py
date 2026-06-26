@@ -137,6 +137,38 @@ async def _try_eia(region: str) -> Optional[list[dict]]:
         return None
 
 
+async def _try_awattar(region: str) -> Optional[list[dict]]:
+    """
+    Attempt to fetch real-time spot market prices from Awattar (Germany).
+    Free, no API key required.
+    """
+    if region != "DE":
+        return None
+
+    try:
+        url = "https://api.awattar.de/v1/marketdata"
+        async with httpx.AsyncClient(timeout=6.0) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            data = resp.json()
+
+        raw = data.get("data", [])
+        if not raw or len(raw) < 24:
+            return None
+
+        # Awattar returns EUR/MWh. Convert to EUR/kWh (divide by 1000).
+        # We add a 0.15 EUR flat markup to simulate retail pricing over wholesale.
+        vals = [float(r.get("marketprice", 50)) for r in raw[:24]]
+        kwh_prices = [round((v / 1000) + 0.15, 4) for v in vals]
+
+        logger.info(f"Awattar prices fetched for {region}: {kwh_prices[:3]}...")
+        return _as_price_list(kwh_prices)
+
+    except Exception as e:
+        logger.debug(f"Awattar fetch skipped: {e}")
+        return None
+
+
 async def get_electricity_prices(
     region: str = "US_CA",
     source: str = "auto",
@@ -164,9 +196,14 @@ async def get_electricity_prices(
     actual_source = "tou"
 
     if source in ("auto", "live"):
-        live_prices = await _try_eia(region)
-        if live_prices:
-            actual_source = "eia_live"
+        if region == "DE":
+            live_prices = await _try_awattar(region)
+            if live_prices:
+                actual_source = "awattar_live"
+        else:
+            live_prices = await _try_eia(region)
+            if live_prices:
+                actual_source = "eia_live"
 
     if live_prices is None:
         # TOU fallback with daily variation
@@ -192,9 +229,11 @@ async def get_electricity_prices(
         "peak_price":     round(max(price_vals), 4),
         "off_peak_hour":  f"{off_peak_hour:02d}:00",
         "off_peak_price": round(min(price_vals), 4),
-        "currency":       "USD/kWh",
+        "currency":       "EUR/kWh" if region == "DE" else "USD/kWh",
         "note": (
-            "Live EIA wholesale data (scaled to retail)"
+            "Live Awattar wholesale data (scaled to retail)"
+            if actual_source == "awattar_live"
+            else "Live EIA wholesale data (scaled to retail)"
             if actual_source == "eia_live"
             else f"Regional TOU profile ({region}) with daily variation"
         ),
