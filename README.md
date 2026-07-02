@@ -19,31 +19,23 @@ A full-stack intelligent EV charging platform that combines **Linear Programming
 ### Dashboard
 <!-- Add your Dashboard screenshot below -->
 <!-- To add: drag your screenshot into this folder and replace the placeholder -->
-> 📷 **[Add Dashboard screenshot here]**
-> `![Dashboard](./docs/screenshots/dashboard.png)`
+> 📷 <img width="959" height="494" alt="image" src="https://github.com/user-attachments/assets/d0c37107-131c-4769-9135-ee9dfc05190a" />
 
 ---
 
 ### Schedule Optimizer
 <!-- Add your Optimizer page screenshot below -->
-> 📷 **[Add Optimizer screenshot here]**
-> `![Optimizer](./docs/screenshots/optimizer.png)`
+> 📷 <img width="959" height="492" alt="image" src="https://github.com/user-attachments/assets/36eb010d-d194-4281-9eec-b7f04deca7fe" />
 
+> 
 ---
 
 ### Analytics & Charging History
 <!-- Add your Analytics page screenshot below -->
-> 📷 **[Add Analytics screenshot here]**
-> `![Analytics](./docs/screenshots/analytics.png)`
+> 📷 <img width="955" height="597" alt="image" src="https://github.com/user-attachments/assets/9624ea43-1d85-4ca0-ac45-329b74f3cef4" />
 
 ---
 
-### Battery Health
-<!-- Add your Battery Health page screenshot below -->
-> 📷 **[Add Battery Health screenshot here]**
-> `![Battery Health](./docs/screenshots/battery_health.png)`
-
----
 
 ## 🧠 How It Works
 
