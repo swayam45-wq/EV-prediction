@@ -73,6 +73,110 @@ _TOU_PROFILES: dict[str, list[float]] = {
 SUPPORTED_REGIONS = list(_TOU_PROFILES.keys())
 
 
+# ── ZIP / Postal code → Region mapping ───────────────────────
+# US states by ZIP prefix → region codes (CA, TX, or general US_CA fallback)
+# UK postcodes start with letters; German postcodes are 5-digit starting 0-9;
+# Indian PIN codes are 6-digit starting with 1-8.
+
+_US_STATE_BY_ZIP_PREFIX: dict[str, str] = {
+    # California
+    "900": "US_CA", "901": "US_CA", "902": "US_CA", "903": "US_CA",
+    "904": "US_CA", "905": "US_CA", "906": "US_CA", "907": "US_CA",
+    "908": "US_CA", "910": "US_CA", "911": "US_CA", "912": "US_CA",
+    "913": "US_CA", "914": "US_CA", "915": "US_CA", "916": "US_CA",
+    "917": "US_CA", "918": "US_CA", "919": "US_CA", "920": "US_CA",
+    "921": "US_CA", "922": "US_CA", "923": "US_CA", "924": "US_CA",
+    "925": "US_CA", "926": "US_CA", "927": "US_CA", "928": "US_CA",
+    "930": "US_CA", "931": "US_CA", "932": "US_CA", "933": "US_CA",
+    "934": "US_CA", "935": "US_CA", "936": "US_CA", "937": "US_CA",
+    "938": "US_CA", "939": "US_CA", "940": "US_CA", "941": "US_CA",
+    "942": "US_CA", "943": "US_CA", "944": "US_CA", "945": "US_CA",
+    "946": "US_CA", "947": "US_CA", "948": "US_CA", "949": "US_CA",
+    "950": "US_CA", "951": "US_CA", "952": "US_CA", "953": "US_CA",
+    "954": "US_CA", "955": "US_CA", "956": "US_CA", "957": "US_CA",
+    "958": "US_CA", "959": "US_CA", "960": "US_CA", "961": "US_CA",
+    # Texas
+    "750": "US_TX", "751": "US_TX", "752": "US_TX", "753": "US_TX",
+    "754": "US_TX", "755": "US_TX", "756": "US_TX", "757": "US_TX",
+    "758": "US_TX", "759": "US_TX", "760": "US_TX", "761": "US_TX",
+    "762": "US_TX", "763": "US_TX", "764": "US_TX", "765": "US_TX",
+    "766": "US_TX", "767": "US_TX", "768": "US_TX", "769": "US_TX",
+    "770": "US_TX", "771": "US_TX", "772": "US_TX", "773": "US_TX",
+    "774": "US_TX", "775": "US_TX", "776": "US_TX", "777": "US_TX",
+    "778": "US_TX", "779": "US_TX", "780": "US_TX", "781": "US_TX",
+    "782": "US_TX", "783": "US_TX", "784": "US_TX", "785": "US_TX",
+    "786": "US_TX", "787": "US_TX", "788": "US_TX", "789": "US_TX",
+    "790": "US_TX", "791": "US_TX", "792": "US_TX", "793": "US_TX",
+    "794": "US_TX", "795": "US_TX", "796": "US_TX", "797": "US_TX",
+    "798": "US_TX", "799": "US_TX",
+}
+
+
+def zip_to_region(postal_code: str) -> dict:
+    """
+    Map a ZIP / postal code to a pricing region.
+
+    Supports:
+      - US 5-digit ZIP codes  → US_CA or US_TX (others → US_CA as default)
+      - UK postcodes (start with letters) → UK
+      - German postcodes (5-digit, not starting with typical US/IN range) → DE
+      - Indian PIN codes (6-digit starting 1-8) → IN
+      - Everything else → DEFAULT
+
+    Returns a dict: { region, country, confidence, note }
+    """
+    code = postal_code.strip().upper().replace(" ", "")
+
+    # UK postcodes always start with one or two letters
+    if code and code[0].isalpha():
+        return {
+            "region": "UK",
+            "country": "United Kingdom",
+            "confidence": "high",
+            "note": f"UK postcode detected → UK electricity profile",
+        }
+
+    # Numeric postal codes
+    digits = "".join(ch for ch in code if ch.isdigit())
+
+    # Indian PIN: 6 digits, first digit 1–8
+    if len(digits) == 6 and digits[0] in "12345678":
+        return {
+            "region": "IN",
+            "country": "India",
+            "confidence": "medium",
+            "note": f"6-digit PIN code detected → India electricity profile",
+        }
+
+    # US ZIP: exactly 5 digits or 9 (ZIP+4)
+    if len(digits) in (5, 9):
+        prefix = digits[:3]
+        region = _US_STATE_BY_ZIP_PREFIX.get(prefix, "US_CA")
+        state  = "California" if region == "US_CA" else "Texas"
+        return {
+            "region": region,
+            "country": "United States",
+            "confidence": "high" if prefix in _US_STATE_BY_ZIP_PREFIX else "medium",
+            "note": f"US ZIP {digits[:5]} → {state} electricity profile",
+        }
+
+    # German PLZ: 5 digits (captured above as len==5 but not US prefixes)
+    if len(digits) == 5:
+        return {
+            "region": "DE",
+            "country": "Germany",
+            "confidence": "medium",
+            "note": f"5-digit PLZ detected → German electricity profile",
+        }
+
+    return {
+        "region": "DEFAULT",
+        "country": "Unknown",
+        "confidence": "low",
+        "note": "Could not determine region from postal code — using default profile",
+    }
+
+
 def _add_day_noise(prices: list[float], seed: int = 0) -> list[float]:
     """Add small daily variation (±3%) to make prices feel real."""
     result = []

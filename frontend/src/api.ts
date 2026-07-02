@@ -31,6 +31,16 @@ export const getWeather = (params?: {
 export const getPrices = (region = 'US_CA', source = 'auto'): Promise<PricesResponse> =>
   api.get<PricesResponse>('/api/prices', { params: { region, source } }).then(r => r.data)
 
+/** Resolve a ZIP / postal code to a pricing region. */
+export const getRegionFromZip = (postal_code: string): Promise<{
+  postal_code: string
+  region: string
+  country: string
+  confidence: string
+  note: string
+}> =>
+  api.get('/api/prices/region-from-zip', { params: { postal_code } }).then(r => r.data)
+
 export const getVehicleStatus = (provider?: string): Promise<VehicleStatus> =>
   api.get<VehicleStatus>('/api/vehicle/status', { params: { provider } }).then(r => r.data)
 

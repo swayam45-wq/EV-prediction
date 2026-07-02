@@ -9,7 +9,7 @@ import {
   Loader2, CheckCircle, AlertCircle, Car, RefreshCw, Globe,
   Link2, Unlink,
 } from 'lucide-react'
-import { getRecommendation, getVehicleStatus, getPrices, connectVehicle, disconnectVehicle } from '../api'
+import { getRecommendation, getVehicleStatus, getPrices, connectVehicle, disconnectVehicle, getRegionFromZip } from '../api'
 import type { ChargingRequest, ChargingRecommendation, ElectricityPrice, VehicleStatus } from '../types'
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Title, Tooltip, Legend, Filler)
@@ -53,7 +53,14 @@ function WearBar({ label, value }: { label: string; value: number }) {
   )
 }
 
-const REGIONS = ['US_CA', 'US_TX', 'UK', 'DE', 'IN', 'DEFAULT']
+const REGION_LABELS: Record<string, string> = {
+  US_CA: '🇺🇸 California',
+  US_TX: '🇺🇸 Texas',
+  UK:    '🇬🇧 United Kingdom',
+  DE:    '🇩🇪 Germany',
+  IN:    '🇮🇳 India',
+  DEFAULT: '🌐 Default',
+}
 
 export default function Optimizer() {
   const [form, setForm] = useState({
@@ -65,6 +72,9 @@ export default function Optimizer() {
   })
   const [prices, setPrices] = useState<ElectricityPrice[]>(DEFAULT_PRICES)
   const [region, setRegion] = useState('US_CA')
+  const [zipCode, setZipCode] = useState('')
+  const [zipInfo, setZipInfo] = useState<{ country: string; note: string; confidence: string } | null>(null)
+  const [zipLoading, setZipLoading] = useState(false)
   const [vehicle, setVehicle] = useState<VehicleStatus | null>(null)
   const [vehicleLoading, setVehicleLoading] = useState(false)
   const [pricesLoading, setPricesLoading] = useState(false)
@@ -74,6 +84,25 @@ export default function Optimizer() {
   const [showPrices, setShowPrices] = useState(false)
 
   const set = (k: string, v: number | string) => setForm(f => ({ ...f, [k]: v }))
+
+  // ── ZIP code auto-detect ─────────────────────────────────────
+  const handleZipChange = async (zip: string) => {
+    setZipCode(zip)
+    if (zip.trim().length < 3) {
+      setZipInfo(null)
+      return
+    }
+    setZipLoading(true)
+    try {
+      const res = await getRegionFromZip(zip.trim())
+      setRegion(res.region)
+      setZipInfo({ country: res.country, note: res.note, confidence: res.confidence })
+    } catch {
+      setZipInfo(null)
+    } finally {
+      setZipLoading(false)
+    }
+  }
 
   // ── Connect & Disconnect Handlers ───────────────────────────
   const handleConnect = async () => {
@@ -427,17 +456,56 @@ export default function Optimizer() {
                   onClick={() => setShowPrices(v => !v)}>
                   <Globe size={14} color="var(--text-tertiary)" />
                   <span className="card-title">Electricity Prices</span>
-                  {pricesLoading && <Loader2 size={11} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--text-tertiary)' }} />}
+                  {(pricesLoading || zipLoading) && <Loader2 size={11} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--text-tertiary)' }} />}
                   {showPrices ? <ChevronUp size={14} color="var(--text-tertiary)" /> : <ChevronDown size={14} color="var(--text-tertiary)" />}
                 </button>
-                <select
-                  className="form-select"
-                  value={region}
-                  onChange={e => setRegion(e.target.value)}
-                  style={{ width: 90, height: 28, fontSize: 11 }}
-                >
-                  {REGIONS.map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
+              </div>
+              {/* ZIP code input */}
+              <div style={{ padding: '10px 16px 0', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    className="form-input"
+                    type="text"
+                    placeholder="Enter ZIP / postal code (e.g. 90210, SW1A 1AA)"
+                    value={zipCode}
+                    onChange={e => handleZipChange(e.target.value)}
+                    style={{ width: '100%', paddingRight: 34 }}
+                  />
+                  <div style={{
+                    position: 'absolute', right: 10, top: '50%',
+                    transform: 'translateY(-50%)', pointerEvents: 'none',
+                  }}>
+                    {zipLoading
+                      ? <Loader2 size={13} style={{ animation: 'spin 0.7s linear infinite', color: 'var(--text-tertiary)' }} />
+                      : <Globe size={13} color="var(--text-tertiary)" />
+                    }
+                  </div>
+                </div>
+                {zipInfo && (
+                  <div style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 8,
+                    padding: '8px 10px',
+                    background: 'rgba(14,165,233,0.07)',
+                    border: '1px solid rgba(14,165,233,0.18)',
+                    borderRadius: 6, fontSize: 11,
+                  }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, color: 'var(--accent)', marginBottom: 2 }}>
+                        {REGION_LABELS[region] || region}
+                      </div>
+                      <div style={{ color: 'var(--text-tertiary)', lineHeight: 1.4 }}>{zipInfo.note}</div>
+                    </div>
+                    <div className={`pill pill-${zipInfo.confidence === 'high' ? 'green' : zipInfo.confidence === 'medium' ? 'yellow' : 'red'}`}
+                      style={{ flexShrink: 0, marginTop: 1 }}>
+                      {zipInfo.confidence}
+                    </div>
+                  </div>
+                )}
+                {!zipInfo && zipCode.trim().length === 0 && (
+                  <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                    Using region: <span style={{ color: 'var(--text-secondary)', fontWeight: 600 }}>{REGION_LABELS[region] || region}</span>
+                  </div>
+                )}
               </div>
               {showPrices && (
                 <div className="card-body">
